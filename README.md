@@ -1,7 +1,7 @@
 # Anti-Prompt Injector · AstrBot 提示词安全插件
 
 ![License](https://img.shields.io/badge/License-AGPL--3.0-red.svg)
-![PTD Core](https://img.shields.io/badge/PTD-2.2-brightgreen.svg)
+![PTD Core](https://img.shields.io/badge/PTD-3.0-brightgreen.svg)
 [![GitHub Repo](https://img.shields.io/badge/GitHub-astrbot__plugin__antipromptinjector-black.svg)](https://github.com/oyxning/astrbot_plugin_antipromptinjector)
 
 <p align="center">
@@ -12,12 +12,13 @@
 
 ---
 
-## ✨ v3.2 亮点
+## ✨ v3.3 亮点
 
-- **PTD 2.2 引擎**：新增多模特征、Base64/URL/Unicode 载荷解码以及恶意外链检测，多信号叠加自动加权。
+- **PTD 3.0 引擎**：全面升级检测能力——在 2.3 的编码识别基础上新增执行链与外链协同加权；加入 `PowerShell -enc`、`certutil -decode`、`bitsadmin /transfer`、函数调用结构等高危特征识别；对“编码+执行”“外链+命令拉取”共现进行额外加权，提升复合攻击拦截率。
+- **版本一致性与可见性**：统一插件版本常量并在 WebUI 安全总览与登录页显示插件版本与 PTD 核心版本；`metadata.yaml` 与插件注册版本同步至 `v3.3.0` / `3.3.0`。
 - **LLM 安全审计**：在神盾 / 焦土 / 拦截模式下生成结构化 JSON 判定（是否注入、置信度、原因）。
 - **自动黑白名单**：启发式与 LLM 均可触发封禁，支持永久 / 定时封禁，并提供指令 / WebUI 双向维护。
-- **明暗主题 WebUI**：密码登录 + 会话超时 + 明暗主题切换，实时展示核心状态、拦截统计、分析日志。
+- **明暗主题 WebUI**：密码登录 + 会话超时 + 明暗主题切换，实时展示核心状态、拦截统计、分析日志（含版本信息）。
 - **端口智能回退**：监听端口被占用时自动尝试备用端口并更新配置，避免 WebUI 启动失败。
 
 > 官方展示页：`site/index.html`

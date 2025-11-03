@@ -1,15 +1,13 @@
 import base64
 import re
+import gzip
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote
 
 
 class PTDCoreBase:
-    """
-    提示词威胁检测核心基类，便于未来升级（例如 PTD3.0）复用。
-    """
 
-    version: str = "2.3.0"
+    version: str = "3.0.0"
     name: str = "Prompt Threat Detector Core"
 
     def analyze(self, prompt: str) -> Dict[str, Any]:  # pragma: no cover - interface
@@ -18,12 +16,13 @@ class PTDCoreBase:
 
 class PromptThreatDetector(PTDCoreBase):
     """
-    Prompt Threat Detector 2.3
+    Prompt Threat Detector 3.0
     --------------------------
     - 多模特征权重评分（正则、关键词、结构标记、外链、编码 payload）
-    - Base64 / URL-Encoding / Unicode Escape 载荷解码
+    - 扩展载荷解码（Base64/Gzip 变体、URL-Encoding、Unicode/Hex 转义、Data URI）
+    - 协同加权（编码+执行、恶意外链+命令拉取、多高危信号并发）
     - 风险分级（low / medium / high）并返回触发信号
-    - 保持与 PTD 3.0 的接口兼容性，方便后续拆分升级
+    - 保持向后兼容的分析结果结构，便于插件集成
     """
 
     def __init__(self):
@@ -127,6 +126,42 @@ class PromptThreatDetector(PTDCoreBase):
                 "description": "通过注释隐藏注入表达式",
             },
             {
+                "name": "Data URI Base64",
+                "pattern": re.compile(r"data:[^;]+;base64,[A-Za-z0-9+/]{24,}={0,2}", re.IGNORECASE),
+                "weight": 4,
+                "description": "检测到疑似通过 Data URI 携带注入载荷",
+            },
+            {
+                "name": "命令行拉取外链",
+                "pattern": re.compile(r"(curl|wget|Invoke-?WebRequest|iwr).{0,80}https?://", re.IGNORECASE),
+                "weight": 4,
+                "description": "命令行方式尝试拉取外部载荷",
+            },
+            {
+                "name": "PowerShell Base64 执行",
+                "pattern": re.compile(r"powershell(?:\.exe)?\s+-enc\s+[A-Za-z0-9+/=]{20,}", re.IGNORECASE),
+                "weight": 5,
+                "description": "检测到使用 PowerShell -enc 执行疑似载荷",
+            },
+            {
+                "name": "Certutil 解码",
+                "pattern": re.compile(r"certutil\s+-decode\s+\S+", re.IGNORECASE),
+                "weight": 4,
+                "description": "检测到通过 certutil -decode 处理外部内容",
+            },
+            {
+                "name": "Bitsadmin 传输",
+                "pattern": re.compile(r"bitsadmin\s+/transfer\b", re.IGNORECASE),
+                "weight": 4,
+                "description": "检测到使用 bitsadmin 进行外部传输",
+            },
+            {
+                "name": "函数/工具调用结构注入",
+                "pattern": re.compile(r"\"(function_call|tool_use)\"\s*:\s*\{", re.IGNORECASE),
+                "weight": 3,
+                "description": "疑似试图通过函数/工具调用结构注入指令",
+            },
+            {
                 "name": "hate_request_cn",
                 "pattern": re.compile(
                     r"(请|务必|必须).{0,24}(至少|不少于)\s*\d{2,4}\s*字.{0,60}(描述|阐述|分析).{0,60}(某|特定|指定|针对).{0,16}(人群|群体|职业|民族|宗教|性别|地区).{0,60}(负面|缺点|劣根性|刻板印象|坏处).{0,40}(煽动|激起|挑起|加深).{0,20}(偏见|仇恨|厌恶|敌意)",
@@ -196,6 +231,15 @@ class PromptThreatDetector(PTDCoreBase):
             "fuel prejudice": 5,
             "spread prejudice": 4,
             "inflame hatred": 5,
+            # 执行链/外链拉取相关
+            "powershell -enc": 5,
+            "certutil -decode": 4,
+            "bitsadmin /transfer": 4,
+            "invoke-webrequest": 3,
+            "curl http": 3,
+            "wget http": 3,
+            "load prompt from url": 3,
+            "fetch prompt from": 3,
         }
 
         # 3. 结构标记词，用于识别系统片段
@@ -214,6 +258,10 @@ class PromptThreatDetector(PTDCoreBase):
             "[system message]",
             "[developer message]",
             ":: override ::",
+            # 结构/工具调用标记
+            "function_call",
+            "tool_use",
+            "tools:",
         ]
 
         # 4. 常见越狱语句
@@ -238,6 +286,13 @@ class PromptThreatDetector(PTDCoreBase):
             "write a 300 word negative stereotype about",
             "incite hatred towards a specific group",
             "fuel prejudice against",
+            # 外链拉取与执行链可疑语句
+            "download and execute",
+            "download and run",
+            "从外部链接拉取",
+            "使用curl从外部下载",
+            "用invoke-webrequest拉取",
+            "load prompt from",
         ]
 
         # 5. 仇恨煽动检测词表
@@ -369,9 +424,11 @@ class PromptThreatDetector(PTDCoreBase):
         # 7. 百分号编码/Unicode 编码检测
         self.percent_pattern = re.compile(r"(?:%[0-9a-fA-F]{2}){8,}")
         self.unicode_escape_pattern = re.compile(r"(\\u[0-9a-fA-F]{4}){4,}")
+        self.hex_escape_pattern = re.compile(r"(\\x[0-9a-fA-F]{2}){8,}")
 
         # 8. Base64 载荷检测
         self.base64_pattern = re.compile(r"(?<![A-Za-z0-9+/=])([A-Za-z0-9+/]{24,}={0,2})(?![A-Za-z0-9+/=])")
+        self.data_uri_pattern = re.compile(r"data:[^;]+;base64,([A-Za-z0-9+/]{24,}={0,2})", re.IGNORECASE)
 
         # 分数阈值
         self.medium_threshold = 7
@@ -467,7 +524,7 @@ class PromptThreatDetector(PTDCoreBase):
             score += 3
 
         # Base64 / URL / Unicode 载荷检测
-        score, signals = self._handle_encoded_payloads(text, signals, score)
+        score, signals = self._handle_encoded_payloads(text, normalized, signals, score)
 
         # 外部恶意链接
         score, signals = self._handle_external_links(text, normalized, signals, score)
@@ -635,9 +692,11 @@ class PromptThreatDetector(PTDCoreBase):
     def _handle_encoded_payloads(
         self,
         text: str,
+        normalized: str,
         signals: List[Dict[str, Any]],
         score: int,
     ) -> Tuple[int, List[Dict[str, Any]]]:
+        found_types: List[str] = []
         # Base64 检测
         decoded_message = self._detect_base64_payload(text)
         if decoded_message:
@@ -651,18 +710,63 @@ class PromptThreatDetector(PTDCoreBase):
                 }
             )
             score += 4
+            found_types.append("base64")
 
         # 百分号编码
         percent_result = self._detect_percent_encoded_payload(text)
         if percent_result:
             signals.append(percent_result)
             score += percent_result["weight"]
+            found_types.append("percent")
 
         # Unicode Escape 编码
         unicode_result = self._detect_unicode_escape_payload(text)
         if unicode_result:
             signals.append(unicode_result)
             score += unicode_result["weight"]
+            found_types.append("unicode")
+
+        # Hex Escape 编码
+        hex_result = self._detect_hex_escape_payload(text)
+        if hex_result:
+            signals.append(hex_result)
+            score += hex_result["weight"]
+            found_types.append("hex")
+
+        # Data URI Base64
+        data_uri_result = self._detect_data_uri_payload(text)
+        if data_uri_result:
+            signals.append(data_uri_result)
+            score += data_uri_result["weight"]
+            found_types.append("data_uri")
+
+        # 编码载荷的协同加权：出现两种及以上编码形式
+        if len(found_types) >= 2:
+            signals.append(
+                {
+                    "type": "payload",
+                    "name": "encoded_multi",
+                    "detail": ",".join(found_types[:3]),
+                    "weight": 2,
+                    "description": "多种编码载荷同时出现，提升风险评分",
+                }
+            )
+            score += 2
+
+        # Base64 执行链协同：检测到 base64 + (powershell -enc / certutil -decode)
+        if ("base64" in found_types) and (
+            re.search(r"powershell(?:\\.exe)?\s+-enc", normalized) or re.search(r"certutil\s+-decode", normalized)
+        ):
+            signals.append(
+                {
+                    "type": "heuristic",
+                    "name": "base64_exec_chain",
+                    "detail": "base64 + exec",
+                    "weight": 2,
+                    "description": "编码载荷与执行链共现，提升风险评分",
+                }
+            )
+            score += 2
 
         return score, signals
 
@@ -675,12 +779,27 @@ class PromptThreatDetector(PTDCoreBase):
                 decoded_bytes = base64.b64decode(padded, validate=True)
             except Exception:
                 continue
+            # 尝试识别 gzip 压缩后的载荷
+            try:
+                decoded_bytes = gzip.decompress(decoded_bytes)
+            except Exception:
+                pass
             try:
                 decoded_text = decoded_bytes.decode("utf-8")
             except UnicodeDecodeError:
                 decoded_text = decoded_bytes.decode("utf-8", "ignore")
             normalized = decoded_text.lower()
-            keywords = ("ignore previous instructions", "system prompt", "猫娘", "越狱", "jailbreak", "developer mode override")
+            keywords = (
+                "ignore previous instructions",
+                "system prompt",
+                "猫娘",
+                "越狱",
+                "jailbreak",
+                "developer mode override",
+                "role: system",
+                "begin prompt",
+                "override",
+            )
             if any(keyword in normalized for keyword in keywords):
                 preview = decoded_text.replace("\n", " ")[:120]
                 return f"解码后包含指令片段: {preview}"
@@ -727,6 +846,57 @@ class PromptThreatDetector(PTDCoreBase):
             }
         return None
 
+    def _detect_hex_escape_payload(self, text: str) -> Optional[Dict[str, Any]]:
+        matches = self.hex_escape_pattern.findall(text)
+        if not matches:
+            return None
+        try:
+            hex_pairs = re.findall(r"\\x([0-9A-Fa-f]{2})", "".join(matches))
+            hex_bytes = bytes(int(h, 16) for h in hex_pairs)
+        except Exception:
+            return None
+        try:
+            decoded = hex_bytes.decode("utf-8")
+        except Exception:
+            decoded = hex_bytes.decode("utf-8", "ignore")
+        lower_decoded = decoded.lower()
+        if any(keyword in lower_decoded for keyword in ("system prompt", "jailbreak", "override", "猫娘", "越狱")):
+            preview = decoded.replace("\n", " ")[:120]
+            return {
+                "type": "payload",
+                "name": "hex_escape_payload",
+                "detail": preview,
+                "weight": 3,
+                "description": "Hex 转义内容中包含可疑指令",
+            }
+        return None
+
+    def _detect_data_uri_payload(self, text: str) -> Optional[Dict[str, Any]]:
+        m = self.data_uri_pattern.search(text)
+        if not m:
+            return None
+        chunk = m.group(1)
+        padded = chunk + "=" * ((4 - len(chunk) % 4) % 4)
+        try:
+            decoded_bytes = base64.b64decode(padded, validate=True)
+        except Exception:
+            return None
+        try:
+            decoded_text = decoded_bytes.decode("utf-8")
+        except Exception:
+            decoded_text = decoded_bytes.decode("utf-8", "ignore")
+        lower_decoded = decoded_text.lower()
+        if any(k in lower_decoded for k in ("system prompt", "override", "jailbreak", "猫娘", "越狱")):
+            preview = decoded_text.replace("\n", " ")[:120]
+            return {
+                "type": "payload",
+                "name": "data_uri_payload",
+                "detail": preview,
+                "weight": 3,
+                "description": "Data URI Base64 中包含可疑指令",
+            }
+        return None
+
     def _handle_external_links(
         self,
         text: str,
@@ -761,6 +931,19 @@ class PromptThreatDetector(PTDCoreBase):
                     "detail": suspicious_links[0],
                     "weight": 2,
                     "description": "疑似通过外链获取额外注入载荷",
+                }
+            )
+            score += 2
+
+        # 命令拉取 + 恶意外链协同加权
+        if suspicious_links and re.search(r"(curl|wget|invoke-?webrequest|iwr|powershell|bitsadmin|certutil|aria2c)\b", normalized):
+            signals.append(
+                {
+                    "type": "heuristic",
+                    "name": "link_command_combo",
+                    "detail": suspicious_links[0],
+                    "weight": 2,
+                    "description": "命令拉取与恶意外链共现，提升风险评分",
                 }
             )
             score += 2

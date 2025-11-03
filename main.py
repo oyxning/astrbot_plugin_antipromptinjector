@@ -403,6 +403,8 @@ class PromptGuardianWebUI:
             "</style>",
         ]
         html_parts.extend(head_script)
+        plugin_version = getattr(self.plugin, "plugin_version", "unknown")
+        ptd_version = getattr(self.plugin, "ptd_version", "unknown")
         html_parts.extend([
             "</head>",
             "<body class='login-body'>",
@@ -412,6 +414,7 @@ class PromptGuardianWebUI:
             "                <h1>AntiPromptInjector 控制台</h1>",
             "                <button class='theme-toggle' id='themeToggle' type='button'><span class='moon'>🌙</span><span class='sun'>☀️</span></button>",
             "            </div>",
+            f"            <p class='muted'>版本：v{escape(str(plugin_version))} · PTD：v{escape(str(ptd_version))}</p>",
             "            <p class='muted'>请输入管理员设置的 WebUI 密码，以保护配置不被未授权访问。</p>",
             f"            {notice_html}",
             "            <form method='post' action='/login'>",
@@ -618,6 +621,7 @@ class PromptGuardianWebUI:
         auto_blacklist = config.get("auto_blacklist", True)
         enabled = config.get("enabled", True)
         ptd_version = getattr(self.plugin, "ptd_version", "unknown")
+        plugin_version = getattr(self.plugin, "plugin_version", "unknown")
 
         defense_labels = {
             "sentry": "哨兵模式",
@@ -663,6 +667,7 @@ class PromptGuardianWebUI:
 
         status_lines = [
             f"插件状态：{'🟢 已启用' if enabled else '🟥 已停用'}",
+            f"插件版本：v{escape(str(plugin_version))}",
             f"PTD 核心：v{escape(str(ptd_version))}",
             f"防护模式：{defense_labels.get(defense_mode, defense_mode)}",
             f"LLM 辅助策略：{llm_labels.get(llm_mode, llm_mode)}",
@@ -903,7 +908,8 @@ class PromptGuardianWebUI:
             return "API_SESSION=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
         max_age = expires if expires is not None else self.session_timeout
         return f"API_SESSION={session_id}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}"
-@register("antipromptinjector", "LumineStory", "一个用于阻止提示词注入攻击的插件", "3.1.0")
+PLUGIN_VERSION = "3.3.0"
+@register("antipromptinjector", "LumineStory", "一个用于阻止提示词注入攻击的插件", PLUGIN_VERSION)
 class AntiPromptInjector(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -933,6 +939,7 @@ class AntiPromptInjector(Star):
 
         self.detector = PromptThreatDetector()
         self.ptd_version = getattr(self.detector, "version", "unknown")
+        self.plugin_version = PLUGIN_VERSION
         history_size = max(10, int(self.config.get("incident_history_size", 100)))
         self.recent_incidents: deque = deque(maxlen=history_size)
         self.analysis_logs: deque = deque(maxlen=200)
