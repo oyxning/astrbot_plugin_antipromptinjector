@@ -59,11 +59,29 @@
         "hint": "控制 LLM 辅助分析的触发策略。\n- 活跃(active): 每条消息都进行复核。\n- 待机(standby): 命中风险或出现 @ 时才复核。\n- 禁用(disabled): 完全关闭 LLM 复核。",
         "obvious_hint": true
     },
+    "review_provider": {
+        "description": "LLM 复核使用的供应商名（留空使用默认）",
+        "type": "string",
+        "default": "",
+        "hint": "例如：openai、azure、gemini 等（视 AstrBot 已配置的 Provider 名称而定）。"
+    },
+    "review_model": {
+        "description": "LLM 复核使用的模型名（留空使用默认）",
+        "type": "string",
+        "default": "",
+        "hint": "例如：gpt-4o、gpt-4o-mini、claude-3.5 等（取决于所选供应商）。"
+    },
     "llm_analysis_private_chat_enabled": {
         "description": "私聊中也启用 LLM 辅助分析",
         "type": "bool",
         "default": false,
         "hint": "设为 true 可让私聊消息同样触发 LLM 注入分析。"
+    },
+    "anti_harassment_enabled": {
+        "description": "启用防性骚扰/辱骂/霸凌检测与拦截",
+        "type": "bool",
+        "default": true,
+        "hint": "开启后，将识别骚扰、挑逗、辱骂、威胁等不当请求并提升风险等级。可在 WebUI 或指令中开关。"
     },
     "incident_history_size": {
         "description": "WebUI 拦截记录数量上限",

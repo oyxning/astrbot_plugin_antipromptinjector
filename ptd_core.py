@@ -407,6 +407,38 @@ class PromptThreatDetector(PTDCoreBase):
             ),
         ]
 
+        # 5.1 骚扰/辱骂/霸凌检测词表
+        self.harassment_negative_indicators: List[str] = [
+            "侮辱", "辱骂", "脏话", "贱人", "滚开", "婊子", "废物",
+            "bitch", "jerk", "moron", "idiot", "stupid",
+        ]
+        self.harassment_incitement_indicators: List[str] = [
+            "挑逗", "性暗示", "摸你", "强迫", "威胁", "恐吓", "胁迫",
+            "harass", "grope", "force", "threaten", "coerce",
+        ]
+        self.harassment_emotion_indicators: List[str] = [
+            "我很想", "欲望", "冲动", "报复", "报复他", "我恨你",
+            "desire", "lust", "revenge", "I hate you",
+        ]
+        self.harassment_request_keywords: List[str] = [
+            "骚扰", "调戏", "猥亵", "不当接触", "跟踪骚扰", "霸凌", "辱骂",
+            "sexual harassment", "harass", "bully", "insult",
+        ]
+        self.harassment_request_patterns: List[re.Pattern] = [
+            re.compile(
+                r"(请|必须|务必).{0,40}(不要拒绝|直接).{0,40}(满足|执行).{0,60}(骚扰|调戏|猥亵|辱骂|霸凌)",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                r"(tell|show|do).{0,40}(not refuse|without拒绝|without refusal).{0,40}(harass|bully|insult)",
+                re.IGNORECASE,
+            ),
+            re.compile(
+                r"(脱(掉)?衣服|亲(吻)?我|摸(我|她|他)|发(裸|敏感)照)",
+                re.IGNORECASE,
+            ),
+        ]
+
         # 6. 外部恶意载荷/域名提示
         self.malicious_domains: List[str] = [
             "pastebin.com",
@@ -508,6 +540,12 @@ class PromptThreatDetector(PTDCoreBase):
         if hate_signal:
             signals.append(hate_signal)
             score += hate_signal["weight"]
+
+        # 骚扰/辱骂/霸凌检测
+        harassment_signal = self._detect_harassment_request(text, normalized)
+        if harassment_signal:
+            signals.append(harassment_signal)
+            score += harassment_signal["weight"]
 
         # 多段代码块覆盖系统提示
         code_block_count = text.count("```")
@@ -685,6 +723,63 @@ class PromptThreatDetector(PTDCoreBase):
                 "detail": f"{detail}; snippet={snippet[:160]}",
                 "weight": 12,
                 "description": "\u7591\u4f3c\u8bf7\u6c42\u751f\u6210\u9488\u5bf9\u7279\u5b9a\u7fa4\u4f53\u7684\u70c8\u6027\u60c5\u7eea\u5185\u5bb9",
+            }
+
+        return None
+
+    def _detect_harassment_request(
+        self,
+        text: str,
+        normalized: str,
+    ) -> Optional[Dict[str, Any]]:
+        # 明确骚扰类正则优先
+        for pattern in self.harassment_request_patterns:
+            m = pattern.search(text) or pattern.search(normalized)
+            if m:
+                snippet = text[max(0, m.start() - 40) : min(len(text), m.end() + 40)]
+                return {
+                    "type": "abuse",
+                    "name": "harassment_request",
+                    "detail": snippet.replace("\n", " ")[:160],
+                    "weight": 9,
+                    "description": "疑似请求或实施骚扰/辱骂/霸凌行为",
+                }
+
+        def has_term(term: str) -> bool:
+            return term and (term in text or term in normalized)
+
+        neg_hits = [t for t in self.harassment_negative_indicators if has_term(t)]
+        inc_hits = [t for t in self.harassment_incitement_indicators if has_term(t)]
+        emo_hits = [t for t in self.harassment_emotion_indicators if has_term(t)]
+        req_hits = [t for t in self.harassment_request_keywords if has_term(t)]
+
+        neg = bool(neg_hits)
+        inc = bool(inc_hits)
+        emo = bool(emo_hits)
+        req = bool(req_hits)
+
+        if (req and (neg or inc)) or (inc and (neg or emo)):
+            # 协同加权：请求/挑逗 + 负面/胁迫
+            w = 4
+            if neg:
+                w += 3
+            if inc:
+                w += 3
+            if emo:
+                w += 1
+            # 片段拼接细节
+            candidate_terms = [term for term in (req_hits + inc_hits + neg_hits + emo_hits) if term in text]
+            idx = min((text.find(t) for t in candidate_terms if text.find(t) != -1), default=0)
+            start = max(0, idx - 40)
+            end = min(len(text), idx + 160)
+            snippet = text[start:end].replace("\n", " ")
+            detail = f"req={','.join(req_hits[:3])}; inc={','.join(inc_hits[:3])}; neg={','.join(neg_hits[:3])}"
+            return {
+                "type": "abuse",
+                "name": "harassment_request",
+                "detail": f"{detail}; snippet={snippet[:160]}",
+                "weight": max(7, min(12, w)),
+                "description": "疑似涉及骚扰/辱骂/霸凌的不当请求",
             }
 
         return None

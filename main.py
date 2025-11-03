@@ -548,6 +548,20 @@ class PromptGuardianWebUI:
                 config["llm_analysis_private_chat_enabled"] = enabled
                 save()
                 message = "私聊 LLM 分析已开启" if enabled else "私聊 LLM 分析已关闭"
+            elif action == "toggle_anti_harassment":
+                enabled = not bool(config.get("anti_harassment_enabled", True))
+                config["anti_harassment_enabled"] = enabled
+                save()
+                message = "防骚扰检测已开启" if enabled else "防骚扰检测已关闭"
+            elif action == "set_review_options":
+                rp = params.get("review_provider", [""])[0].strip()
+                rm = params.get("review_model", [""])[0].strip()
+                config["review_provider"] = rp
+                config["review_model"] = rm
+                save()
+                rp_disp = rp if rp else "默认"
+                rm_disp = rm if rm else "默认"
+                message = f"审查供应商/模型已更新为：{rp_disp} / {rm_disp}"
             elif action == "add_whitelist":
                 target = params.get("target", [""])[0].strip()
                 if not target:
@@ -620,6 +634,9 @@ class PromptGuardianWebUI:
         private_llm = config.get("llm_analysis_private_chat_enabled", False)
         auto_blacklist = config.get("auto_blacklist", True)
         enabled = config.get("enabled", True)
+        anti_harassment = bool(config.get("anti_harassment_enabled", True))
+        review_provider = str(config.get("review_provider", "") or "")
+        review_model = str(config.get("review_model", "") or "")
         ptd_version = getattr(self.plugin, "ptd_version", "unknown")
         plugin_version = getattr(self.plugin, "plugin_version", "unknown")
 
@@ -673,6 +690,9 @@ class PromptGuardianWebUI:
             f"LLM 辅助策略：{llm_labels.get(llm_mode, llm_mode)}",
             f"自动拉黑：{'开启' if auto_blacklist else '关闭'}",
             f"私聊 LLM 分析：{'开启' if private_llm else '关闭'}",
+            f"防骚扰检测：{'开启' if anti_harassment else '关闭'}",
+            f"审查供应商：{escape(review_provider) if review_provider else '默认'}",
+            f"审查模型：{escape(review_model) if review_model else '默认'}",
         ]
         html_parts.append("<div class='card'><h3>安全总览</h3>")
         for line in status_lines:
@@ -719,6 +739,19 @@ class PromptGuardianWebUI:
             "<form class='inline-form' method='get' action='/'>"
             "<input type='hidden' name='action' value='toggle_private_llm'/>"
             f"<button class='btn secondary' type='submit'>{'关闭私聊分析' if private_llm else '开启私聊分析'}</button></form>"
+        )
+        html_parts.append(
+            "<form class='inline-form' method='get' action='/'>"
+            "<input type='hidden' name='action' value='toggle_anti_harassment'/>"
+            f"<button class='btn secondary' type='submit'>{'关闭防骚扰' if anti_harassment else '开启防骚扰'}</button></form>"
+        )
+        html_parts.append(
+            "<form class='inline-form' method='get' action='/'>"
+            "<input type='hidden' name='action' value='set_review_options'/>"
+            f"<input type='text' name='review_provider' placeholder='审查供应商' value='{escape(review_provider)}'/>"
+            f"<input type='text' name='review_model' placeholder='审查模型' value='{escape(review_model)}'/>"
+            "<button class='btn secondary' type='submit'>保存审查配置</button>"
+            "</form>"
         )
         html_parts.append(
             "<form class='inline-form' method='get' action='/'>"
@@ -923,6 +956,9 @@ class AntiPromptInjector(Star):
             "defense_mode": "sentry",
             "llm_analysis_mode": "standby",
             "llm_analysis_private_chat_enabled": False,
+            "anti_harassment_enabled": True,
+            "review_provider": self.config.get("review_provider", ""),
+            "review_model": self.config.get("review_model", ""),
             "webui_enabled": True,
             "webui_host": "127.0.0.1",
             "webui_port": 18888,
@@ -1065,7 +1101,24 @@ class AntiPromptInjector(Star):
         return int(self.config.get("webui_session_timeout", 3600))
 
     async def _llm_injection_audit(self, event: AstrMessageEvent, prompt: str) -> Dict[str, Any]:
-        llm_provider = self.context.get_using_provider()
+        # 选择审查 Provider/模型（带回退）
+        review_provider = str(self.config.get("review_provider", "") or "").strip()
+        review_model = str(self.config.get("review_model", "") or "").strip()
+        llm_provider = None
+        try:
+            if review_provider or review_model:
+                # 尝试通过名称/模型选择 Provider，若签名不匹配则回退
+                try:
+                    llm_provider = self.context.get_using_provider(review_provider, review_model)  # type: ignore
+                except TypeError:
+                    try:
+                        llm_provider = self.context.get_using_provider(review_provider)  # type: ignore
+                    except Exception:
+                        llm_provider = None
+        except Exception:
+            llm_provider = None
+        if not llm_provider:
+            llm_provider = self.context.get_using_provider()
         if not llm_provider:
             raise RuntimeError("LLM 分析服务不可用")
         check_prompt = (
@@ -1075,11 +1128,20 @@ class AntiPromptInjector(Star):
             "仅返回 JSON 数据，不要包含额外文字。\n"
             f"待分析内容：```{prompt}```"
         )
-        response = await llm_provider.text_chat(
-            prompt=check_prompt,
-            session_id=f"injection_check_{event.get_session_id()}",
-            contexts=[],
-        )
+        # 尝试传入模型名，若不支持则退化为默认调用
+        try:
+            response = await llm_provider.text_chat(
+                prompt=check_prompt,
+                session_id=f"injection_check_{event.get_session_id()}",
+                contexts=[],
+                model=review_model if review_model else None,
+            )
+        except TypeError:
+            response = await llm_provider.text_chat(
+                prompt=check_prompt,
+                session_id=f"injection_check_{event.get_session_id()}",
+                contexts=[],
+            )
         result_text = (response.completion_text or "").strip()
         return self._parse_llm_response(result_text)
 
@@ -1111,6 +1173,22 @@ class AntiPromptInjector(Star):
         private_llm = self.config.get("llm_analysis_private_chat_enabled", False)
         is_group_message = event.get_group_id() is not None
         message_type = event.get_message_type()
+
+        # 防骚扰开关：关闭时下调骚扰相关评分并重算严重等级（仍保留日志）
+        if not bool(self.config.get("anti_harassment_enabled", True)):
+            harassment_score = sum(s.get("weight", 0) for s in analysis.get("signals", []) if s.get("name") == "harassment_request")
+            if harassment_score:
+                new_score = max(0, int(analysis.get("score", 0)) - int(harassment_score))
+                analysis["score"] = new_score
+                # 重算严重等级（与 ptd_core 阈值一致：7/11）
+                if new_score >= 11:
+                    analysis["severity"] = "high"
+                elif new_score >= 7:
+                    analysis["severity"] = "medium"
+                elif new_score > 0:
+                    analysis["severity"] = "low"
+                else:
+                    analysis["severity"] = "none"
 
         if analysis["severity"] == "high":
             analysis["trigger"] = "regex" if analysis.get("regex_hit") else "heuristic"
@@ -1329,6 +1407,29 @@ class AntiPromptInjector(Star):
             logger.error(f"渲染 LLM 状态面板失败：{exc}")
             yield event.plain_result("渲染状态面板时出现异常。")
 
+    @filter.command("设置审查LLM", is_admin=True)
+    async def cmd_set_review_llm(self, event: AstrMessageEvent, provider: str = "", model: str = ""):
+        rp = (provider or "").strip()
+        rm = (model or "").strip()
+        self.config["review_provider"] = rp
+        self.config["review_model"] = rm
+        self.config.save_config()
+        rp_disp = rp if rp else "默认"
+        rm_disp = rm if rm else "默认"
+        yield event.plain_result(f"✅ 审查供应商/模型已设置为：{rp_disp} / {rm_disp}")
+
+    @filter.command("开启防骚扰", is_admin=True)
+    async def cmd_enable_harassment(self, event: AstrMessageEvent):
+        self.config["anti_harassment_enabled"] = True
+        self.config.save_config()
+        yield event.plain_result("✅ 已开启防性骚扰/辱骂/霸凌检测与拦截。")
+
+    @filter.command("关闭防骚扰", is_admin=True)
+    async def cmd_disable_harassment(self, event: AstrMessageEvent):
+        self.config["anti_harassment_enabled"] = False
+        self.config.save_config()
+        yield event.plain_result("✅ 已关闭防性骚扰/辱骂/霸凌检测。启发式仍保留日志，但不参与拦截评分。")
+
     @filter.command("设置WebUI密码", is_admin=True)
     async def cmd_set_webui_password(self, event: AstrMessageEvent, new_password: str):
         if len(new_password) < 6:
@@ -1356,6 +1457,10 @@ class AntiPromptInjector(Star):
             "— LLM 分析控制（管理权限）—\n"
             "/开启LLM注入分析\n"
             "/关闭LLM注入分析\n"
+            "— 审查配置（管理权限）—\n"
+            "/设置审查LLM <供应商> [模型]\n"
+            "/开启防骚扰\n"
+            "/关闭防骚扰\n"
             "— 名单管理（管理权限）—\n"
             "/拉黑 <ID> [时长(分钟，0=永久)]\n"
             "/解封 <ID>\n"
