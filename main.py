@@ -18,6 +18,11 @@ from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, register
 
 try:
+    from .persona_core import PersonaMatcher  # type: ignore
+except ImportError:
+    from persona_core import PersonaMatcher
+
+try:
     from .ptd_core import PromptThreatDetector  # type: ignore
 except ImportError:
     from ptd_core import PromptThreatDetector
@@ -432,6 +437,117 @@ class PromptGuardianWebUI:
             "</html>",
         ])
         return "\n".join(html_parts)
+
+    def _build_query(self, pairs: Dict[str, str]) -> str:
+        parts: List[str] = []
+        for k, v in pairs.items():
+            if v is None:
+                continue
+            s = str(v)
+            if not s:
+                continue
+            parts.append(f"{quote_plus(k)}={quote_plus(s)}")
+        return "&".join(parts)
+
+    def _filter_incidents(self, params: Dict[str, List[str]]) -> List[Dict[str, Any]]:
+        items = list(self.plugin.recent_incidents)
+        def get(name: str) -> str:
+            return (params.get(name, [""])[0] or "").strip()
+        sender = get("fi_sender")
+        group = get("fi_group")
+        severity = get("fi_severity")
+        trigger = get("fi_trigger")
+        action = get("fi_action")
+        keyword = get("fi_keyword")
+        since_min = get("fi_since")
+        since_ts = None
+        try:
+            m = int(since_min) if since_min else 0
+            since_ts = time.time() - m * 60 if m > 0 else None
+        except Exception:
+            since_ts = None
+
+        def match_str(val: Any, needle: str) -> bool:
+            if not needle:
+                return True
+            return needle.lower() in str(val or "").lower()
+
+        out: List[Dict[str, Any]] = []
+        for it in items:
+            if since_ts and float(it.get("time", 0)) < since_ts:
+                continue
+            if sender and not match_str(it.get("sender_id"), sender):
+                continue
+            if group and not match_str(it.get("group_id"), group):
+                continue
+            if severity and str(it.get("severity")) != severity:
+                continue
+            if trigger and not match_str(it.get("trigger"), trigger):
+                continue
+            if action and str(it.get("action_taken", "")) != action:
+                continue
+            if keyword and not (
+                match_str(it.get("reason"), keyword) or match_str(it.get("prompt_preview"), keyword)
+            ):
+                continue
+            out.append(it)
+        return out
+
+    def _filter_logs(self, params: Dict[str, List[str]]) -> List[Dict[str, Any]]:
+        items = list(self.plugin.analysis_logs)
+        def get(name: str) -> str:
+            return (params.get(name, [""])[0] or "").strip()
+        result = get("fl_result")
+        sender = get("fl_sender")
+        group = get("fl_group")
+        severity = get("fl_severity")
+        trigger = get("fl_trigger")
+        action = get("fl_action")
+        persona_action = get("fl_persona_action")
+        keyword = get("fl_keyword")
+        since_min = get("fl_since")
+        since_ts = None
+        try:
+            m = int(since_min) if since_min else 0
+            since_ts = time.time() - m * 60 if m > 0 else None
+        except Exception:
+            since_ts = None
+
+        def match_str(val: Any, needle: str) -> bool:
+            if not needle:
+                return True
+            return needle.lower() in str(val or "").lower()
+
+        out: List[Dict[str, Any]] = []
+        for it in items:
+            if since_ts and float(it.get("time", 0)) < since_ts:
+                continue
+            if result and str(it.get("result")) != result:
+                continue
+            if sender and not match_str(it.get("sender_id"), sender):
+                continue
+            if group and not match_str(it.get("group_id"), group):
+                continue
+            if severity and str(it.get("severity")) != severity:
+                continue
+            if trigger and not match_str(it.get("trigger"), trigger):
+                continue
+            if action and str(it.get("action_taken", "")) != action:
+                continue
+            if persona_action and str(it.get("persona_action", "")) != persona_action:
+                continue
+            if keyword and not (
+                match_str(it.get("reason"), keyword) or match_str(it.get("prompt_preview"), keyword)
+            ):
+                continue
+            out.append(it)
+        return out
+
+    def _csv_escape(self, v: Any) -> str:
+        s = str(v if v is not None else "")
+        if any(ch in s for ch in [',', '\n', '"']):
+            s = '"' + s.replace('"', '""') + '"'
+        return s
     async def _dispatch(
         self,
         method: str,
@@ -484,6 +600,49 @@ class PromptGuardianWebUI:
             headers = {"Set-Cookie": self._make_session_cookie("", expires=0)}
             return self._redirect_response("/login", extra_headers=headers)
 
+        # Export endpoints (authorized only)
+        if parsed.path.startswith("/export/"):
+            if not password_ready:
+                return self._redirect_response("/login?error=1&message=" + quote_plus("尚未设置密码"))
+            if not self._authorized(cookies):
+                return self._redirect_response("/login")
+
+            if parsed.path == "/export/incidents.csv":
+                rows = self._filter_incidents(params)
+                fields = [
+                    "time","sender_id","group_id","severity","score","trigger","defense_mode","action_taken","reason","prompt_preview"
+                ]
+                out = [",".join(fields)]
+                for r in rows:
+                    line = [self._csv_escape(r.get(f)) for f in fields]
+                    out.append(",".join(line))
+                csv_data = "\n".join(out)
+                return self._response(
+                    200,
+                    "OK",
+                    csv_data,
+                    content_type="text/csv; charset=utf-8",
+                    extra_headers={"Content-Disposition": "attachment; filename=incidents.csv"},
+                )
+            if parsed.path == "/export/analysis.csv":
+                rows = self._filter_logs(params)
+                fields = [
+                    "time","sender_id","group_id","result","severity","score","trigger","core_version",
+                    "action_taken","persona_action","persona_score","persona_reason","reason","prompt_preview"
+                ]
+                out = [",".join(fields)]
+                for r in rows:
+                    line = [self._csv_escape(r.get(f)) for f in fields]
+                    out.append(",".join(line))
+                csv_data = "\n".join(out)
+                return self._response(
+                    200,
+                    "OK",
+                    csv_data,
+                    content_type="text/csv; charset=utf-8",
+                    extra_headers={"Content-Disposition": "attachment; filename=analysis.csv"},
+                )
+
         authorized = self._authorized(cookies)
 
         if not password_ready:
@@ -503,7 +662,7 @@ class PromptGuardianWebUI:
             message, success = await self._apply_action(action, params)
             redirect_path = self._build_redirect_path("", message, success)
             return self._redirect_response(redirect_path)
-        html = self._render_dashboard(notice, success_flag)
+        html = self._render_dashboard(notice, success_flag, params)
         return self._response(200, "OK", html, content_type="text/html; charset=utf-8")
 
     async def _apply_action(self, action: str, params: Dict[str, List[str]]) -> Tuple[str, bool]:
@@ -622,11 +781,11 @@ class PromptGuardianWebUI:
             return "内部错误，请检查日志。", False
         return message, success
 
-    def _render_dashboard(self, notice: str, success: bool) -> str:
+    def _render_dashboard(self, notice: str, success: bool, params: Optional[Dict[str, List[str]]] = None) -> str:
         config = self.plugin.config
         stats = self.plugin.stats
-        incidents = list(self.plugin.recent_incidents)
-        analysis_logs = list(self.plugin.analysis_logs)
+        incidents = self._filter_incidents(params or {})
+        analysis_logs = self._filter_logs(params or {})
         whitelist = config.get("whitelist", [])
         blacklist = config.get("blacklist", {})
         defense_mode = config.get("defense_mode", "sentry")
@@ -765,6 +924,45 @@ class PromptGuardianWebUI:
         )
         html_parts.append("</div></div>")
         html_parts.append("</div>")  # end card-grid
+
+        # Filters & Export section
+        def pv(name: str) -> str:
+            if not params:
+                return ""
+            return escape((params.get(name, [""])[0] or ""))
+        fi_fields = ["fi_sender","fi_group","fi_severity","fi_trigger","fi_action","fi_keyword","fi_since"]
+        fl_fields = ["fl_result","fl_sender","fl_group","fl_severity","fl_trigger","fl_action","fl_persona_action","fl_keyword","fl_since"]
+        fi_query = self._build_query({k: (params.get(k, [""])[0] if params else "") for k in fi_fields})
+        fl_query = self._build_query({k: (params.get(k, [""])[0] if params else "") for k in fl_fields})
+        html_parts.append("<section class='section-with-table'>")
+        html_parts.append("<h3>筛选与导出</h3>")
+        html_parts.append("<form method='get' action='/' class='inline-form'>")
+        html_parts.append(f"<input type='text' name='fi_sender' placeholder='拦截·用户ID' value='{pv('fi_sender')}'/>")
+        html_parts.append(f"<input type='text' name='fi_group' placeholder='拦截·群ID' value='{pv('fi_group')}'/>")
+        html_parts.append(f"<input type='text' name='fi_severity' placeholder='拦截·严重级别' value='{pv('fi_severity')}'/>")
+        html_parts.append(f"<input type='text' name='fi_trigger' placeholder='拦截·触发' value='{pv('fi_trigger')}'/>")
+        html_parts.append(f"<input type='text' name='fi_action' placeholder='拦截·动作' value='{pv('fi_action')}'/>")
+        html_parts.append(f"<input type='text' name='fi_keyword' placeholder='拦截·关键词(原因/预览)' value='{pv('fi_keyword')}'/>")
+        html_parts.append(f"<input type='number' name='fi_since' placeholder='拦截·分钟' min='0' value='{pv('fi_since')}'/>")
+        html_parts.append("<br/>")
+        html_parts.append(f"<input type='text' name='fl_result' placeholder='分析·结果' value='{pv('fl_result')}'/>")
+        html_parts.append(f"<input type='text' name='fl_sender' placeholder='分析·用户ID' value='{pv('fl_sender')}'/>")
+        html_parts.append(f"<input type='text' name='fl_group' placeholder='分析·群ID' value='{pv('fl_group')}'/>")
+        html_parts.append(f"<input type='text' name='fl_severity' placeholder='分析·严重级别' value='{pv('fl_severity')}'/>")
+        html_parts.append(f"<input type='text' name='fl_trigger' placeholder='分析·触发' value='{pv('fl_trigger')}'/>")
+        html_parts.append(f"<input type='text' name='fl_action' placeholder='分析·动作' value='{pv('fl_action')}'/>")
+        html_parts.append(f"<input type='text' name='fl_persona_action' placeholder='分析·人设动作' value='{pv('fl_persona_action')}'/>")
+        html_parts.append(f"<input type='text' name='fl_keyword' placeholder='分析·关键词(原因/预览)' value='{pv('fl_keyword')}'/>")
+        html_parts.append(f"<input type='number' name='fl_since' placeholder='分析·分钟' min='0' value='{pv('fl_since')}'/>")
+        html_parts.append("<div class='actions'>")
+        html_parts.append("<button class='btn' type='submit'>应用筛选</button>")
+        html_parts.append("<a class='btn secondary' href='/'>清除筛选</a>")
+        html_parts.append(f"<a class='btn secondary' href='/export/incidents.csv?{fi_query}'>导出拦截CSV</a>")
+        html_parts.append(f"<a class='btn secondary' href='/export/analysis.csv?{fl_query}'>导出分析CSV</a>")
+        html_parts.append("</div>")
+        html_parts.append(f"<p class='small'>拦截事件：{len(incidents)} 条 · 分析日志：{len(analysis_logs)} 条</p>")
+        html_parts.append("</form>")
+        html_parts.append("</section>")
 
         html_parts.append("<div class='dual-column'>")
         html_parts.append("<div class='section-with-table'><h3>白名单</h3>")
@@ -941,7 +1139,7 @@ class PromptGuardianWebUI:
             return "API_SESSION=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
         max_age = expires if expires is not None else self.session_timeout
         return f"API_SESSION={session_id}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}"
-PLUGIN_VERSION = "3.3.0"
+PLUGIN_VERSION = "3.4.0"
 @register("antipromptinjector", "LumineStory", "一个用于阻止提示词注入攻击的插件", PLUGIN_VERSION)
 class AntiPromptInjector(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -953,7 +1151,7 @@ class AntiPromptInjector(Star):
             "blacklist": {},
             "auto_blacklist": True,
             "blacklist_duration": 60,
-            "defense_mode": "sentry",
+            "defense_mode": "intercept",
             "llm_analysis_mode": "standby",
             "llm_analysis_private_chat_enabled": False,
             "anti_harassment_enabled": True,
@@ -967,6 +1165,9 @@ class AntiPromptInjector(Star):
             "webui_password_hash": self.config.get("webui_password_hash", ""),
             "webui_password_salt": self.config.get("webui_password_salt", ""),
             "webui_session_timeout": 3600,
+            # Persona detection
+            "persona_enabled": True,
+            "persona_sensitivity": 0.7,
         }
         for key, value in defaults.items():
             if key not in self.config:
@@ -991,6 +1192,16 @@ class AntiPromptInjector(Star):
         self.monitor_task = asyncio.create_task(self._monitor_llm_activity())
         self.cleanup_task = asyncio.create_task(self._cleanup_expired_bans())
         self.webui_sessions: Dict[str, float] = {}
+
+        # Persona matcher
+        self.persona_enabled: bool = bool(self.config.get("persona_enabled", True))
+        try:
+            sens = float(self.config.get("persona_sensitivity", 0.7))
+        except Exception:
+            sens = 0.7
+        self.persona_matcher = PersonaMatcher(sensitivity=sens)
+
+        self.observe_until: Optional[float] = None
 
         self.web_ui: Optional[PromptGuardianWebUI] = None
         self.webui_task: Optional[asyncio.Task] = None
@@ -1027,6 +1238,7 @@ class AntiPromptInjector(Star):
             "defense_mode": defense_mode,
             "trigger": analysis.get("trigger", action),
             "prompt_preview": self._make_prompt_preview(analysis.get("prompt", "")),
+            "action_taken": analysis.get("action_taken", action),
         }
         self.recent_incidents.appendleft(entry)
         self.stats["total_intercepts"] += 1
@@ -1039,6 +1251,7 @@ class AntiPromptInjector(Star):
             self.stats["heuristic_hits"] += 1
 
     def _append_analysis_log(self, event: AstrMessageEvent, analysis: Dict[str, Any], intercepted: bool):
+        persona = analysis.get("persona") if isinstance(analysis.get("persona"), dict) else {}
         entry = {
             "time": time.time(),
             "sender_id": event.get_sender_id(),
@@ -1050,6 +1263,10 @@ class AntiPromptInjector(Star):
             "reason": analysis.get("reason") or ("未检测到明显风险" if not intercepted else "检测到风险"),
             "prompt_preview": self._make_prompt_preview(analysis.get("prompt", "")),
             "core_version": self.ptd_version,
+            "action_taken": analysis.get("action_taken", ""),
+            "persona_score": (persona or {}).get("compatibility_score"),
+            "persona_action": (persona or {}).get("action_level"),
+            "persona_reason": (persona or {}).get("reason"),
         }
         self.analysis_logs.appendleft(entry)
 
@@ -1168,7 +1385,7 @@ class AntiPromptInjector(Star):
     async def _detect_risk(self, event: AstrMessageEvent, req: ProviderRequest) -> Tuple[bool, Dict[str, Any]]:
         analysis = self.detector.analyze(req.prompt or "")
         analysis["prompt"] = req.prompt or ""
-        defense_mode = self.config.get("defense_mode", "sentry")
+        defense_mode = self.config.get("defense_mode", "intercept")
         llm_mode = self.config.get("llm_analysis_mode", "standby")
         private_llm = self.config.get("llm_analysis_private_chat_enabled", False)
         is_group_message = event.get_group_id() is not None
@@ -1189,6 +1406,28 @@ class AntiPromptInjector(Star):
                     analysis["severity"] = "low"
                 else:
                     analysis["severity"] = "none"
+
+        # 人设一致性检测（默认启用）
+        if self.persona_enabled:
+            try:
+                persona_result = self.persona_matcher.analyze(req.prompt or "", getattr(req, "system_prompt", "") or "")
+                analysis["persona"] = persona_result
+                # 将人设动作映射为严重等级
+                persona_action = persona_result.get("action_level", "none")
+                if persona_action in {"block", "revise", "suggest"}:
+                    analysis["trigger"] = "persona"
+                    analysis["reason"] = persona_result.get("reason", "人设一致性偏差")
+                    # 强制赋值 severity 优先级：block>revise>suggest
+                    if persona_action == "block":
+                        analysis["severity"] = "high"
+                    elif persona_action == "revise":
+                        analysis["severity"] = "medium"
+                    else:
+                        analysis["severity"] = "low"
+                    # 在拦截模式下，任何人设偏差均视为风险
+                    return True, analysis
+            except Exception as exc:
+                logger.warning(f"人设检测失败：{exc}")
 
         if analysis["severity"] == "high":
             analysis["trigger"] = "regex" if analysis.get("regex_hit") else "heuristic"
@@ -1331,24 +1570,58 @@ class AntiPromptInjector(Star):
                 self.config.save_config()
                 logger.info(f"黑名单用户 {sender_id} 封禁已到期，已移除。")
 
+            # 临时观察模式自动恢复
+            if self.observe_until and time.time() >= self.observe_until and self.config.get("defense_mode") == "sentry":
+                self.config["defense_mode"] = "intercept"
+                self.config.save_config()
+                self.observe_until = None
+
             risky, analysis = await self._detect_risk(event, req)
 
             if risky:
                 reason = analysis.get("reason") or "检测到提示词注入风险"
                 await self._handle_blacklist(event, reason)
-                defense_mode = self.config.get("defense_mode", "sentry")
+                defense_mode = self.config.get("defense_mode", "intercept")
+
+                persona_info = analysis.get("persona", {}) if isinstance(analysis.get("persona"), dict) else {}
+                persona_action = persona_info.get("action_level")
 
                 if defense_mode in {"aegis", "sentry"}:
                     await self._apply_aegis_defense(req)
                 elif defense_mode == "scorch":
                     await self._apply_scorch_defense(req)
                 elif defense_mode == "intercept":
-                    await event.send(event.plain_result("⚠️ 检测到提示词注入攻击，请求已被拦截。"))
+                    # 三级拦截策略
+                    action_label = "拦截"
+                    if persona_action == "block":
+                        await event.send(event.plain_result("⛔ 人设冲突严重，已完全阻止请求。"))
+                        action_label = "完全阻止"
+                    elif persona_action == "revise":
+                        # 请求修正
+                        tips = persona_info.get("suggestions") or []
+                        msg = "⚠️ 人设存在可调整的违规。请修正后再请求。"
+                        if tips:
+                            msg += "\n建议：" + "；".join(tips[:3])
+                        await event.send(event.plain_result(msg))
+                        action_label = "请求修正"
+                    elif persona_action == "suggest":
+                        # 替代方案建议
+                        tips = persona_info.get("suggestions") or []
+                        msg = "ℹ️ 人设轻微偏差，已提供替代方案。"
+                        if tips:
+                            msg += "\n建议：" + "；".join(tips[:3])
+                        await event.send(event.plain_result(msg))
+                        action_label = "替代方案建议"
+                    else:
+                        await event.send(event.plain_result("⚠️ 检测到提示词注入风险，请求已被拦截。"))
+                        action_label = "拦截"
                     await self._apply_scorch_defense(req)
                     event.stop_event()
 
                 analysis["reason"] = reason
-                self._record_incident(event, analysis, defense_mode, defense_mode)
+                # 扩展日志动作字段
+                analysis["action_taken"] = persona_action or defense_mode
+                self._record_incident(event, analysis, defense_mode, analysis.get("action_taken", defense_mode))
                 self._append_analysis_log(event, analysis, True)
             else:
                 if not analysis.get("reason"):
@@ -1377,6 +1650,14 @@ class AntiPromptInjector(Star):
         self.config["defense_mode"] = new_mode
         self.config.save_config()
         yield event.plain_result(f"🛡️ 防护模式已切换为：{labels[new_mode]}")
+
+    @filter.command("切换观察模式", is_admin=True)
+    async def cmd_temp_observe(self, event: AstrMessageEvent, minutes: int = 5):
+        minutes = max(1, min(1440, int(minutes or 5)))
+        self.config["defense_mode"] = "sentry"
+        self.config.save_config()
+        self.observe_until = time.time() + minutes * 60
+        yield event.plain_result(f"👀 已切换到观察模式 {minutes} 分钟，超时将自动恢复为拦截模式。")
 
     @filter.command("LLM分析状态")
     async def cmd_check_llm_analysis_state(self, event: AstrMessageEvent):
@@ -1452,6 +1733,7 @@ class AntiPromptInjector(Star):
             "🛡️ AntiPromptInjector 核心指令：\n"
             "— 核心管理（管理权限）—\n"
             "/切换防护模式\n"
+            "/切换观察模式 [分钟]\n"
             "/LLM分析状态\n"
             "/反注入统计\n"
             "— LLM 分析控制（管理权限）—\n"
