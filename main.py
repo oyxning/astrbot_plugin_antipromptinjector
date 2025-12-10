@@ -311,7 +311,9 @@ class PromptGuardianWebUI:
                 except Exception:
                     body = await reader.read(-1)
             cookies = self._parse_cookies(headers.get("cookie", ""))
-            response = await self._dispatch(method, path, headers, body, cookies)
+            peer = writer.get_extra_info("peername")
+            client_ip = peer[0] if isinstance(peer, tuple) and len(peer) > 0 else ""
+            response = await self._dispatch(method, path, headers, body, cookies, client_ip)
             writer.write(response)
             await writer.drain()
         except Exception as exc:
@@ -348,7 +350,7 @@ class PromptGuardianWebUI:
         return True
 
 
-    def _render_login_page(self, message: str = "", success: bool = True, password_ready: bool = True) -> str:
+    def _render_login_page(self, message: str = "", success: bool = True, password_ready: bool = True, token_param: str = "") -> str:
         status_class = "success" if success else "error"
         notice_html = f"<div class='notice {status_class}'>{escape(message)}</div>" if message else ""
         hint = ""
@@ -425,6 +427,7 @@ class PromptGuardianWebUI:
             "            <form method='post' action='/login'>",
             "                <label for='password'>登录密码</label>",
             f"                <input id='password' type='password' name='password' required {disabled_attr}>",
+            (f"                <input type='hidden' name='token' value='{escape(token_param)}'>" if token_param else ""),
             f"                <button class='btn' type='submit' {disabled_attr}>进入面板</button>",
             "            </form>",
             f"            {hint}",
@@ -555,10 +558,29 @@ class PromptGuardianWebUI:
         headers: Dict[str, str],
         body: bytes,
         cookies: Dict[str, str],
+        client_ip: str,
     ) -> bytes:
         parsed = urlparse(path)
         params = parse_qs(parsed.query)
         password_ready = self.plugin.is_password_configured()
+
+        token_conf = str(self.plugin.config.get("webui_token", "") or "")
+        token_ok = True
+        token_val = ""
+        if token_conf:
+            if method == "GET":
+                token_val = (params.get("token", [""])[0] or "").strip()
+            elif method == "POST":
+                try:
+                    form_probe = parse_qs(body.decode("utf-8", "ignore"))
+                    token_val = (form_probe.get("token", [""])[0] or "").strip()
+                except Exception:
+                    token_val = ""
+            token_ok = bool(token_val and hmac.compare_digest(token_conf, token_val))
+
+        if parsed.path != "/login":
+            if token_conf and not token_ok:
+                return self._response(403, "Forbidden", "需要有效令牌")
 
         if parsed.path == "/login":
             if method == "POST":
@@ -569,13 +591,23 @@ class PromptGuardianWebUI:
                         self._render_login_page("尚未设置 WebUI 密码，请先通过指令配置。", success=False, password_ready=False),
                     )
                 form = parse_qs(body.decode("utf-8", "ignore"))
+                if token_conf and not hmac.compare_digest(token_conf, (form.get("token", [""])[0] or "").strip()):
+                    return self._response(403, "Forbidden", "需要有效令牌")
+                if not self.plugin.can_attempt_login(client_ip):
+                    return self._response(
+                        200,
+                        "OK",
+                        self._render_login_page("尝试次数过多，请稍后再试。", success=False, password_ready=True),
+                    )
                 password = form.get("password", [""])[0]
                 if self.plugin.verify_webui_password(password):
                     session_id = self.plugin.create_webui_session(self.session_timeout)
                     headers = {
                         "Set-Cookie": self._make_session_cookie(session_id),
                     }
-                    return self._redirect_response("/", extra_headers=headers)
+                    self.plugin.reset_login_attempts(client_ip)
+                    return self._redirect_response(self._build_redirect_path("", "", True), extra_headers=headers)
+                self.plugin.record_failed_login(client_ip)
                 return self._response(
                     200,
                     "OK",
@@ -584,14 +616,15 @@ class PromptGuardianWebUI:
             else:
                 message = params.get("message", [""])[0]
                 error_flag = params.get("error", ["0"])[0] == "1"
+                token_param = (params.get("token", [""])[0] or "")
                 return self._response(
                     200,
                     "OK",
-                    self._render_login_page(message, success=not error_flag, password_ready=password_ready),
+                    self._render_login_page(message, success=not error_flag, password_ready=password_ready, token_param=token_param),
                 )
 
-        if method != "GET":
-            return self._response(405, "Method Not Allowed", "仅支持 GET 请求")
+        if method not in {"GET", "POST"}:
+            return self._response(405, "Method Not Allowed", "仅支持 GET/POST 请求")
 
         if parsed.path == "/logout":
             session_id = cookies.get("API_SESSION")
@@ -655,14 +688,25 @@ class PromptGuardianWebUI:
         if not authorized:
             return self._redirect_response("/login")
 
-        action = params.get("action", [None])[0]
+        if method == "POST" and parsed.path == "/":
+            origin = headers.get("origin") or headers.get("referer") or ""
+            allowed = f"http://{self.host}:{self.port}"
+            if origin and not origin.startswith(allowed):
+                return self._response(403, "Forbidden", "来源不被允许")
+            form = parse_qs(body.decode("utf-8", "ignore"))
+            csrf = (form.get("csrf", [""])[0] or "").strip()
+            session_id = cookies.get("API_SESSION", "")
+            if not self.plugin.verify_csrf(session_id, csrf):
+                return self._response(403, "Forbidden", "CSRF 校验失败")
+            action = (form.get("action", [None])[0] or None)
+            if action:
+                message, success = await self._apply_action(action, form)
+                redirect_path = self._build_redirect_path("", message, success)
+                return self._redirect_response(redirect_path)
         notice = params.get("notice", [""])[0]
         success_flag = params.get("success", ["1"])[0] == "1"
-        if action:
-            message, success = await self._apply_action(action, params)
-            redirect_path = self._build_redirect_path("", message, success)
-            return self._redirect_response(redirect_path)
-        html = self._render_dashboard(notice, success_flag, params)
+        session_id = cookies.get("API_SESSION", "")
+        html = self._render_dashboard(notice, success_flag, params, session_id)
         return self._response(200, "OK", html, content_type="text/html; charset=utf-8")
 
     async def _apply_action(self, action: str, params: Dict[str, List[str]]) -> Tuple[str, bool]:
@@ -781,7 +825,7 @@ class PromptGuardianWebUI:
             return "内部错误，请检查日志。", False
         return message, success
 
-    def _render_dashboard(self, notice: str, success: bool, params: Optional[Dict[str, List[str]]] = None) -> str:
+    def _render_dashboard(self, notice: str, success: bool, params: Optional[Dict[str, List[str]]] = None, session_id: str = "") -> str:
         config = self.plugin.config
         stats = self.plugin.stats
         incidents = self._filter_incidents(params or {})
@@ -869,57 +913,77 @@ class PromptGuardianWebUI:
         toggle_label = "关闭防护" if enabled else "开启防护"
         toggle_value = "off" if enabled else "on"
         html_parts.append("<div class='card'><h3>快速操作</h3><div class='actions'>")
+        tkn = str(config.get("webui_token", "") or "")
+        csrf_token = self.plugin.get_csrf_token(session_id)
         html_parts.append(
-            "<form class='inline-form' method='get' action='/'>"
+            "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='toggle_enabled'/>"
             f"<input type='hidden' name='value' value='{toggle_value}'/>"
+            f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
+            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
             f"<button class='btn' type='submit'>{toggle_label}</button></form>"
         )
         for mode in ("sentry", "aegis", "scorch", "intercept"):
             html_parts.append(
-                "<form class='inline-form' method='get' action='/'>"
+                "<form class='inline-form' method='post' action='/'>"
                 "<input type='hidden' name='action' value='set_defense_mode'/>"
                 f"<input type='hidden' name='value' value='{mode}'/>"
+                f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
+                f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
                 f"<button class='btn secondary' type='submit'>{defense_labels[mode]}</button></form>"
             )
         for mode in ("active", "standby", "disabled"):
             html_parts.append(
-                "<form class='inline-form' method='get' action='/'>"
+                "<form class='inline-form' method='post' action='/'>"
                 "<input type='hidden' name='action' value='set_llm_mode'/>"
                 f"<input type='hidden' name='value' value='{mode}'/>"
+                f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
+                f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
                 f"<button class='btn secondary' type='submit'>LLM {llm_labels[mode]}</button></form>"
             )
         html_parts.append(
-            "<form class='inline-form' method='get' action='/'>"
+            "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='toggle_auto_blacklist'/>"
+            f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
+            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
             f"<button class='btn secondary' type='submit'>{'关闭自动拉黑' if auto_blacklist else '开启自动拉黑'}</button></form>"
         )
         html_parts.append(
-            "<form class='inline-form' method='get' action='/'>"
+            "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='toggle_private_llm'/>"
+            f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
+            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
             f"<button class='btn secondary' type='submit'>{'关闭私聊分析' if private_llm else '开启私聊分析'}</button></form>"
         )
         html_parts.append(
-            "<form class='inline-form' method='get' action='/'>"
+            "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='toggle_anti_harassment'/>"
+            f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
+            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
             f"<button class='btn secondary' type='submit'>{'关闭防骚扰' if anti_harassment else '开启防骚扰'}</button></form>"
         )
         html_parts.append(
-            "<form class='inline-form' method='get' action='/'>"
+            "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='set_review_options'/>"
             f"<input type='text' name='review_provider' placeholder='审查供应商' value='{escape(review_provider)}'/>"
             f"<input type='text' name='review_model' placeholder='审查模型' value='{escape(review_model)}'/>"
+            f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
+            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
             "<button class='btn secondary' type='submit'>保存审查配置</button>"
             "</form>"
         )
         html_parts.append(
-            "<form class='inline-form' method='get' action='/'>"
+            "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='clear_history'/>"
+            f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
+            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
             "<button class='btn danger' type='submit'>清空拦截记录</button></form>"
         )
         html_parts.append(
-            "<form class='inline-form' method='get' action='/'>"
+            "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='clear_logs'/>"
+            f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
+            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
             "<button class='btn danger' type='submit'>清空分析日志</button></form>"
         )
         html_parts.append("</div></div>")
@@ -957,6 +1021,9 @@ class PromptGuardianWebUI:
         html_parts.append("<div class='actions'>")
         html_parts.append("<button class='btn' type='submit'>应用筛选</button>")
         html_parts.append("<a class='btn secondary' href='/'>清除筛选</a>")
+        if tkn:
+            fi_query = (fi_query + ("&" if fi_query else "")) + f"token={quote_plus(tkn)}"
+            fl_query = (fl_query + ("&" if fl_query else "")) + f"token={quote_plus(tkn)}"
         html_parts.append(f"<a class='btn secondary' href='/export/incidents.csv?{fi_query}'>导出拦截CSV</a>")
         html_parts.append(f"<a class='btn secondary' href='/export/analysis.csv?{fl_query}'>导出分析CSV</a>")
         html_parts.append("</div>")
@@ -975,13 +1042,17 @@ class PromptGuardianWebUI:
             html_parts.append("<p class='muted'>当前白名单为空。</p>")
         html_parts.append(
             "<div class='actions'>"
-            "<form class='inline-form' method='get' action='/'>"
+            "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='add_whitelist'/>"
             "<input type='text' name='target' placeholder='用户 ID'/>"
+            f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
+            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
             "<button class='btn secondary' type='submit'>添加白名单</button></form>"
-            "<form class='inline-form' method='get' action='/'>"
+            "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='remove_whitelist'/>"
             "<input type='text' name='target' placeholder='用户 ID'/>"
+            f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
+            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
             "<button class='btn secondary' type='submit'>移除白名单</button></form>"
             "</div>"
         )
@@ -1003,14 +1074,18 @@ class PromptGuardianWebUI:
             html_parts.append("<p class='muted'>当前黑名单为空。</p>")
         html_parts.append(
             "<div class='actions'>"
-            "<form class='inline-form' method='get' action='/'>"
+            "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='add_blacklist'/>"
             "<input type='text' name='target' placeholder='用户 ID'/>"
             "<input type='number' name='duration' placeholder='分钟(0=永久)' min='0'/>"
+            f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
+            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
             "<button class='btn secondary' type='submit'>添加黑名单</button></form>"
-            "<form class='inline-form' method='get' action='/'>"
+            "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='remove_blacklist'/>"
             "<input type='text' name='target' placeholder='用户 ID'/>"
+            f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
+            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
             "<button class='btn secondary' type='submit'>移除黑名单</button></form>"
             "</div>"
         )
@@ -1105,6 +1180,8 @@ class PromptGuardianWebUI:
             query_parts.append(f"notice={quote_plus(message)}")
             query_parts.append(f"success={'1' if success else '0'}")
         query = "&".join(query_parts)
+        if not token and str(self.plugin.config.get("webui_token", "") or ""):
+            query = (query + ("&" if query else "")) + f"token={quote_plus(str(self.plugin.config.get('webui_token', '') or ''))}"
         return "/?" + query if query else "/"
 
     def _response(self, status: int, reason: str, body: str, content_type: str = "text/html; charset=utf-8", extra_headers: Optional[Dict[str, str]] = None) -> bytes:
@@ -1114,6 +1191,11 @@ class PromptGuardianWebUI:
             f"Content-Type: {content_type}",
             f"Content-Length: {len(body_bytes)}",
             "Connection: close",
+            "Cache-Control: no-store",
+            "X-Content-Type-Options: nosniff",
+            "X-Frame-Options: DENY",
+            "Referrer-Policy: no-referrer",
+            "Content-Security-Policy: default-src 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; script-src 'self' 'unsafe-inline'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'",
         ]
         if extra_headers:
             for key, value in extra_headers.items():
@@ -1139,7 +1221,7 @@ class PromptGuardianWebUI:
             return "API_SESSION=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
         max_age = expires if expires is not None else self.session_timeout
         return f"API_SESSION={session_id}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}"
-PLUGIN_VERSION = "3.4.0"
+PLUGIN_VERSION = "3.5.0"
 @register("antipromptinjector", "LumineStory", "一个用于阻止提示词注入攻击的插件", PLUGIN_VERSION)
 class AntiPromptInjector(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -1155,6 +1237,7 @@ class AntiPromptInjector(Star):
             "llm_analysis_mode": "standby",
             "llm_analysis_private_chat_enabled": False,
             "anti_harassment_enabled": True,
+            "sanitize_enabled": True,
             "review_provider": self.config.get("review_provider", ""),
             "review_model": self.config.get("review_model", ""),
             "webui_enabled": True,
@@ -1164,7 +1247,10 @@ class AntiPromptInjector(Star):
             "incident_history_size": 100,
             "webui_password_hash": self.config.get("webui_password_hash", ""),
             "webui_password_salt": self.config.get("webui_password_salt", ""),
+            "webui_password_iters": self.config.get("webui_password_iters", 0),
+            "webui_password_alg": self.config.get("webui_password_alg", ""),
             "webui_session_timeout": 3600,
+            "enable_signature_lock": True,
             # Persona detection
             "persona_enabled": True,
             "persona_sensitivity": 0.7,
@@ -1192,6 +1278,9 @@ class AntiPromptInjector(Star):
         self.monitor_task = asyncio.create_task(self._monitor_llm_activity())
         self.cleanup_task = asyncio.create_task(self._cleanup_expired_bans())
         self.webui_sessions: Dict[str, float] = {}
+        self.webui_csrf_tokens: Dict[str, str] = {}
+        self.failed_login_attempts: Dict[str, List[float]] = {}
+        self.req_signatures: Dict[str, str] = {}
 
         # Persona matcher
         self.persona_enabled: bool = bool(self.config.get("persona_enabled", True))
@@ -1281,6 +1370,15 @@ class AntiPromptInjector(Star):
         )
 
     def _hash_password(self, password: str, salt: str) -> str:
+        iters = int(self.config.get("webui_password_iters", 0) or 0)
+        alg = str(self.config.get("webui_password_alg", "") or "")
+        if alg == "pbkdf2_sha256" and iters > 0:
+            try:
+                salt_bytes = bytes.fromhex(salt)
+            except ValueError:
+                salt_bytes = salt.encode("utf-8")
+            dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt_bytes, iters)
+            return dk.hex()
         return hashlib.sha256((salt + password).encode("utf-8")).hexdigest()
 
     def is_password_configured(self) -> bool:
@@ -1300,6 +1398,7 @@ class AntiPromptInjector(Star):
         session_id = secrets.token_urlsafe(32)
         lifetime = timeout if timeout and timeout > 0 else int(self.config.get("webui_session_timeout", 3600))
         self.webui_sessions[session_id] = time.time() + lifetime
+        self.webui_csrf_tokens[session_id] = secrets.token_urlsafe(32)
         return session_id
 
     def prune_webui_sessions(self):
@@ -1309,6 +1408,7 @@ class AntiPromptInjector(Star):
         expired = [sid for sid, exp in self.webui_sessions.items() if exp <= now]
         for sid in expired:
             self.webui_sessions.pop(sid, None)
+            self.webui_csrf_tokens.pop(sid, None)
 
     def validate_legacy_token(self, token: str) -> bool:
         expected = self.config.get("webui_token", "")
@@ -1316,6 +1416,39 @@ class AntiPromptInjector(Star):
 
     def get_session_timeout(self) -> int:
         return int(self.config.get("webui_session_timeout", 3600))
+
+    def get_csrf_token(self, session_id: str) -> str:
+        if not session_id:
+            return ""
+        return self.webui_csrf_tokens.get(session_id, "")
+
+    def verify_csrf(self, session_id: str, token: str) -> bool:
+        if not session_id or not token:
+            return False
+        expected = self.webui_csrf_tokens.get(session_id, "")
+        return bool(expected and hmac.compare_digest(expected, token))
+
+    def can_attempt_login(self, ip: str) -> bool:
+        if not ip:
+            return True
+        now = time.time()
+        window = 300.0
+        limit = 5
+        attempts = [t for t in self.failed_login_attempts.get(ip, []) if now - t <= window]
+        self.failed_login_attempts[ip] = attempts
+        return len(attempts) < limit
+
+    def record_failed_login(self, ip: str):
+        if not ip:
+            return
+        lst = self.failed_login_attempts.get(ip, [])
+        lst.append(time.time())
+        self.failed_login_attempts[ip] = lst[-20:]
+
+    def reset_login_attempts(self, ip: str):
+        if not ip:
+            return
+        self.failed_login_attempts.pop(ip, None)
 
     async def _llm_injection_audit(self, event: AstrMessageEvent, prompt: str) -> Dict[str, Any]:
         # 选择审查 Provider/模型（带回退）
@@ -1630,11 +1763,46 @@ class AntiPromptInjector(Star):
                     analysis["severity"] = "none"
                 if not analysis.get("trigger"):
                     analysis["trigger"] = "scan"
+                if bool(self.config.get("sanitize_enabled", True)):
+                    req.prompt = self._sanitize_prompt(req.prompt or "")
                 self._append_analysis_log(event, analysis, False)
+            if bool(self.config.get("enable_signature_lock", True)):
+                sig = self._compute_signature(req)
+                self.req_signatures[event.get_session_id()] = sig
         except Exception as exc:
             logger.error(f"⚠️ [拦截] 注入分析时发生错误: {exc}")
             await self._apply_scorch_defense(req)
             event.stop_event()
+
+    @filter.on_llm_request(priority=999)
+    async def finalize_llm_request(self, event: AstrMessageEvent, req: ProviderRequest):
+        try:
+            if not self.config.get("enabled"):
+                return
+            if event.get_sender_id() in self.config.get("whitelist", []):
+                return
+            if not bool(self.config.get("enable_signature_lock", True)):
+                return
+            expected = self.req_signatures.get(event.get_session_id())
+            if not expected:
+                return
+            current = self._compute_signature(req)
+            if not hmac.compare_digest(expected, current):
+                text = req.prompt or ""
+                det = self.detector.analyze(text)
+                sev = det.get("severity")
+                if sev in {"medium", "high"} or det.get("regex_hit"):
+                    await self._apply_scorch_defense(req)
+                    det["reason"] = det.get("reason") or "读取链路被篡改且检测到可疑结构"
+                    det["trigger"] = det.get("trigger") or "signature_lock"
+                    self._record_incident(event, det, self.config.get("defense_mode", "intercept"), "signature_lock")
+                    self._append_analysis_log(event, det, True)
+                    event.stop_event()
+                    return
+                if bool(self.config.get("sanitize_enabled", True)):
+                    req.prompt = self._sanitize_prompt(text)
+        except Exception as exc:
+            logger.error(f"读取链路校验失败: {exc}")
 
     @filter.command("切换防护模式", is_admin=True)
     async def cmd_switch_defense_mode(self, event: AstrMessageEvent):
@@ -1720,6 +1888,8 @@ class AntiPromptInjector(Star):
             yield event.plain_result("⚠️ 密码长度不宜超过 64 位。")
             return
         salt = secrets.token_hex(16)
+        self.config["webui_password_alg"] = "pbkdf2_sha256"
+        self.config["webui_password_iters"] = 200000
         hash_value = self._hash_password(new_password, salt)
         self.config["webui_password_salt"] = salt
         self.config["webui_password_hash"] = hash_value
@@ -1879,3 +2049,21 @@ class AntiPromptInjector(Star):
             except asyncio.CancelledError:
                 pass
         logger.info("AntiPromptInjector 插件已终止。")
+    def _sanitize_prompt(self, text: str) -> str:
+        s = text or ""
+        s = re.sub(r"^/system\s+.*", "", s, flags=re.IGNORECASE | re.MULTILINE)
+        s = re.sub(r"^```(system|prompt|json|tools|function).*?```", "", s, flags=re.IGNORECASE | re.DOTALL)
+        s = re.sub(r"\brole\s*:\s*system\b.*", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"\b(function_call|tool_use)\s*:\s*\{[\s\S]*?\}", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"data:[^;]+;base64,[A-Za-z0-9+/]{24,}={0,2}", "[redacted-base64]", s, flags=re.IGNORECASE)
+        s = re.sub(r"(curl|wget|invoke-?webrequest|iwr)\b[\s\S]*?https?://\S+", "[redacted-link-fetch]", s, flags=re.IGNORECASE)
+        s = re.sub(r"<<\s*SYS\s*>>[\s\S]*?(?=<<|$)", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"(BEGIN|END)\s+(SYSTEM|PROMPT|INSTRUCTIONS)[\s\S]*", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"<!--[\s\S]*?-->", "", s, flags=re.IGNORECASE)
+        return s
+
+    def _compute_signature(self, req: ProviderRequest) -> str:
+        sys = req.system_prompt or ""
+        ctx = "|".join([str(c) for c in (req.contexts or [])])
+        pmpt = req.prompt or ""
+        return hashlib.sha256((sys + "||" + ctx + "||" + pmpt).encode("utf-8")).hexdigest()

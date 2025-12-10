@@ -83,6 +83,12 @@
         "default": true,
         "hint": "开启后，将识别骚扰、挑逗、辱骂、威胁等不当请求并提升风险等级。可在 WebUI 或指令中开关。"
     },
+    "sanitize_enabled": {
+        "description": "启用提示词净化，移除伪造系统/工具调用/编码载荷片段",
+        "type": "bool",
+        "default": true,
+        "hint": "在非高风险场景也会清理明显的覆盖/越权结构，降低被篡改风险。"
+    },
     "incident_history_size": {
         "description": "WebUI 拦截记录数量上限",
         "type": "int",
@@ -119,6 +125,18 @@
         "default": "",
         "hint": "由插件自动生成，与 webui_password_hash 配套使用。"
     },
+    "webui_password_alg": {
+        "description": "WebUI 密码哈希算法（自动维护）",
+        "type": "string",
+        "default": "",
+        "hint": "当前使用 pbkdf2_sha256。由插件自动维护。"
+    },
+    "webui_password_iters": {
+        "description": "WebUI 密码哈希迭代次数（自动维护）",
+        "type": "int",
+        "default": 0,
+        "hint": "由插件自动维护，提升密码哈希强度。"
+    },
     "webui_token": {
         "description": "WebUI 访问令牌",
         "type": "string",
@@ -130,5 +148,11 @@
         "type": "int",
         "default": 3600,
         "hint": "登录成功后的会话有效期，默认 3600 秒。"
+    },
+    "enable_signature_lock": {
+        "description": "启用请求签名锁，阻止读取过程中被篡改",
+        "type": "bool",
+        "default": true,
+        "hint": "在发送前校验请求签名，如被其他插件修改且包含可疑结构则强制拦截。"
     }
 }
