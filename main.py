@@ -915,12 +915,13 @@ class PromptGuardianWebUI:
         html_parts.append("<div class='card'><h3>快速操作</h3><div class='actions'>")
         tkn = str(config.get("webui_token", "") or "")
         csrf_token = self.plugin.get_csrf_token(session_id)
+        token_field = f"<input type='hidden' name='token' value='{escape(tkn)}'/>" if tkn else ""
         html_parts.append(
             "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='toggle_enabled'/>"
             f"<input type='hidden' name='value' value='{toggle_value}'/>"
             f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
-            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
+            f"{token_field}"
             f"<button class='btn' type='submit'>{toggle_label}</button></form>"
         )
         for mode in ("sentry", "aegis", "scorch", "intercept"):
@@ -929,7 +930,7 @@ class PromptGuardianWebUI:
                 "<input type='hidden' name='action' value='set_defense_mode'/>"
                 f"<input type='hidden' name='value' value='{mode}'/>"
                 f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
-                f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
+            f"{token_field}"
                 f"<button class='btn secondary' type='submit'>{defense_labels[mode]}</button></form>"
             )
         for mode in ("active", "standby", "disabled"):
@@ -938,28 +939,28 @@ class PromptGuardianWebUI:
                 "<input type='hidden' name='action' value='set_llm_mode'/>"
                 f"<input type='hidden' name='value' value='{mode}'/>"
                 f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
-                f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
+            f"{token_field}"
                 f"<button class='btn secondary' type='submit'>LLM {llm_labels[mode]}</button></form>"
             )
         html_parts.append(
             "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='toggle_auto_blacklist'/>"
             f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
-            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
+            f"{token_field}"
             f"<button class='btn secondary' type='submit'>{'关闭自动拉黑' if auto_blacklist else '开启自动拉黑'}</button></form>"
         )
         html_parts.append(
             "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='toggle_private_llm'/>"
             f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
-            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
+            f"{token_field}"
             f"<button class='btn secondary' type='submit'>{'关闭私聊分析' if private_llm else '开启私聊分析'}</button></form>"
         )
         html_parts.append(
             "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='toggle_anti_harassment'/>"
             f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
-            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
+            f"{token_field}"
             f"<button class='btn secondary' type='submit'>{'关闭防骚扰' if anti_harassment else '开启防骚扰'}</button></form>"
         )
         html_parts.append(
@@ -968,7 +969,7 @@ class PromptGuardianWebUI:
             f"<input type='text' name='review_provider' placeholder='审查供应商' value='{escape(review_provider)}'/>"
             f"<input type='text' name='review_model' placeholder='审查模型' value='{escape(review_model)}'/>"
             f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
-            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
+            f"{token_field}"
             "<button class='btn secondary' type='submit'>保存审查配置</button>"
             "</form>"
         )
@@ -976,14 +977,14 @@ class PromptGuardianWebUI:
             "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='clear_history'/>"
             f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
-            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
+            f"{token_field}"
             "<button class='btn danger' type='submit'>清空拦截记录</button></form>"
         )
         html_parts.append(
             "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='clear_logs'/>"
             f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
-            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
+            f"{token_field}"
             "<button class='btn danger' type='submit'>清空分析日志</button></form>"
         )
         html_parts.append("</div></div>")
@@ -1046,13 +1047,13 @@ class PromptGuardianWebUI:
             "<input type='hidden' name='action' value='add_whitelist'/>"
             "<input type='text' name='target' placeholder='用户 ID'/>"
             f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
-            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
+            f"{token_field}"
             "<button class='btn secondary' type='submit'>添加白名单</button></form>"
             "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='remove_whitelist'/>"
             "<input type='text' name='target' placeholder='用户 ID'/>"
             f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
-            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
+            f"{token_field}"
             "<button class='btn secondary' type='submit'>移除白名单</button></form>"
             "</div>"
         )
@@ -1079,13 +1080,13 @@ class PromptGuardianWebUI:
             "<input type='text' name='target' placeholder='用户 ID'/>"
             "<input type='number' name='duration' placeholder='分钟(0=永久)' min='0'/>"
             f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
-            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
+            f"{token_field}"
             "<button class='btn secondary' type='submit'>添加黑名单</button></form>"
             "<form class='inline-form' method='post' action='/'>"
             "<input type='hidden' name='action' value='remove_blacklist'/>"
             "<input type='text' name='target' placeholder='用户 ID'/>"
             f"<input type='hidden' name='csrf' value='{escape(csrf_token)}'/>"
-            f"{('<input type=\'hidden\' name=\'token\' value=\'' + escape(tkn) + '\'>') if tkn else ''}"
+            f"{token_field}"
             "<button class='btn secondary' type='submit'>移除黑名单</button></form>"
             "</div>"
         )
@@ -1221,7 +1222,7 @@ class PromptGuardianWebUI:
             return "API_SESSION=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0"
         max_age = expires if expires is not None else self.session_timeout
         return f"API_SESSION={session_id}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}"
-PLUGIN_VERSION = "3.5.0"
+PLUGIN_VERSION = "3.5.1"
 @register("antipromptinjector", "LumineStory", "一个用于阻止提示词注入攻击的插件", PLUGIN_VERSION)
 class AntiPromptInjector(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
