@@ -8,14 +8,14 @@
         "description": "核心防御模式选择 (可通过指令切换)",
         "type": "string",
         "enum": [
-            {"value": "sentry", "label": "哨兵模式 (极速)"},
-            {"value": "aegis", "label": "神盾模式 (均衡)"},
-            {"value": "scorch", "label": "焦土模式 (强硬)"},
-            {"value": "intercept", "label": "拦截模式 (经典)"}
+            {"value": "sentry", "label": "静默加固 (极速)"},
+            {"value": "aegis", "label": "复核确认 (均衡)"},
+            {"value": "scorch", "label": "内容替换 (强硬)"},
+            {"value": "intercept", "label": "立即拒绝 (经典)"}
         ],
         "default": "sentry",
         "ui:widget": "select",
-        "hint": "选择插件的核心防御策略。\n- 哨兵模式(sentry): 启发式巡航，命中高风险时自动加固提示词，性能优先。\n- 神盾模式(aegis): 启发式 + LLM 复核，兼顾安全性与体验。\n- 焦土模式(scorch): 命中风险即强制改写为拦截提示，最严格。\n- 拦截模式(intercept): 命中风险直接中止事件，兼容性最佳。\n\n快捷指令：管理员可发送 `/切换防护模式` 循环切换。",
+        "hint": "选择插件的核心防御策略。\n- 静默加固(sentry): 检测到风险后只加固系统指令，不打断对话。适合怕误杀、追求对话连贯的场景。\n- 复核确认(aegis): 检测到风险后先用 LLM 二次确认，确认后再加固系统指令。适合想兼顾安全与体验的场景。\n- 内容替换(scorch): 检测到风险后直接把用户请求替换为拦截提示，LLM 不会看到原始内容。适合需要严格屏蔽风险的公开场景。\n- 立即拒绝(intercept): 检测到风险后立即中止请求并告知用户，LLM 完全收不到该消息。适合合规审计、必须拒绝的场合。\n\n快捷指令：管理员可发送 `/切换防护模式` 循环切换。",
         "obvious_hint": true
     },
     "auto_blacklist": {
@@ -47,7 +47,7 @@
         "default": []
     },
     "llm_analysis_mode": {
-        "description": "LLM 辅助分析模式 (用于神盾/焦土/拦截模式)",
+        "description": "LLM 辅助分析模式 (用于复核确认/内容替换/立即拒绝)",
         "type": "string",
         "enum": [
             {"value": "active", "label": "活跃"},

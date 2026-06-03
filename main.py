@@ -85,96 +85,258 @@ STATUS_PANEL_TEMPLATE = """
 WEBUI_STYLE = """
 :root {
     color-scheme: dark;
-    --bg: #050816;
-    --panel: rgba(21, 28, 61, 0.82);
-    --panel-border: rgba(93, 124, 255, 0.35);
-    --primary: #4d7cff;
-    --primary-light: #6ea6ff;
-    --accent: #44d1ff;
-    --text: #e6ecff;
-    --muted: #9aa8d4;
-    --danger: #f87272;
-    --success: #4ade80;
-    --border: rgba(148, 163, 184, 0.25);
-    --surface-hover: rgba(148, 163, 184, 0.08);
-    --input-bg: rgba(15, 23, 42, 0.6);
-    --shadow: 0 26px 60px rgba(10, 18, 50, 0.45);
+    --bg: #080c1a;
+    --bg-gradient: linear-gradient(135deg, #080c1a 0%, #111838 50%, #0a1030 100%);
+    --panel: rgba(18, 24, 52, 0.75);
+    --panel-hover: rgba(24, 32, 64, 0.88);
+    --panel-border: rgba(99, 130, 255, 0.3);
+    --primary: #5b8cff;
+    --primary-light: #8aadff;
+    --accent: #38cfff;
+    --text: #e8edff;
+    --text-secondary: #b9c5e8;
+    --muted: #7c8bb8;
+    --danger: #ff6b6b;
+    --danger-light: #ff8e8e;
+    --success: #3dd68c;
+    --warning: #f0b849;
+    --border: rgba(135, 155, 210, 0.2);
+    --surface-hover: rgba(105, 130, 220, 0.12);
+    --input-bg: rgba(10, 16, 36, 0.7);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.15);
+    --shadow: 0 8px 32px rgba(6, 12, 38, 0.5);
+    --shadow-lg: 0 20px 60px rgba(8, 14, 42, 0.55);
+    --radius-sm: 10px;
+    --radius: 16px;
+    --radius-lg: 22px;
+    --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 [data-theme="light"] {
     color-scheme: light;
-    --bg: #f6f7ff;
-    --panel: rgba(255, 255, 255, 0.90);
-    --panel-border: rgba(93, 124, 255, 0.22);
-    --primary: #395bff;
-    --primary-light: #5f7cff;
-    --accent: #2a7bff;
-    --text: #1f245a;
-    --muted: #5d6a9a;
-    --danger: #f05f57;
-    --success: #18a058;
-    --border: rgba(92, 110, 170, 0.25);
-    --surface-hover: rgba(92, 110, 170, 0.10);
-    --input-bg: rgba(255, 255, 255, 0.92);
-    --shadow: 0 18px 40px rgba(79, 105, 180, 0.28);
+    --bg: #f3f5fe;
+    --bg-gradient: linear-gradient(135deg, #f3f5fe 0%, #e8ecfc 50%, #f0f3fe 100%);
+    --panel: rgba(255, 255, 255, 0.85);
+    --panel-hover: rgba(255, 255, 255, 0.95);
+    --panel-border: rgba(91, 124, 245, 0.25);
+    --primary: #4466ee;
+    --primary-light: #6688ff;
+    --accent: #2a8aee;
+    --text: #1a2258;
+    --text-secondary: #4a5588;
+    --muted: #6b78a8;
+    --danger: #ee4433;
+    --danger-light: #f06655;
+    --success: #1a9a55;
+    --warning: #d48922;
+    --border: rgba(92, 110, 170, 0.2);
+    --surface-hover: rgba(88, 110, 210, 0.08);
+    --input-bg: rgba(255, 255, 255, 0.88);
+    --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.06);
+    --shadow: 0 6px 24px rgba(72, 92, 168, 0.2);
+    --shadow-lg: 0 14px 44px rgba(66, 82, 158, 0.25);
 }
+* { box-sizing: border-box; }
 body {
     font-family: 'Inter', 'Segoe UI', 'PingFang SC', sans-serif;
-    background: var(--bg);
+    background: var(--bg-gradient);
     color: var(--text);
     margin: 0;
-    padding: 24px;
-    transition: background 0.35s ease, color 0.35s ease;
+    padding: 28px;
+    min-height: 100vh;
+    transition: background 0.4s ease, color 0.35s ease;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
 }
-.login-body { padding: 0; }
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
-.container { max-width: 1180px; margin: 0 auto; }
-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
-header h1 { font-size: 28px; margin: 0; }
+.login-body { padding: 0; display: flex; }
+a { color: var(--accent); text-decoration: none; transition: color var(--transition); }
+a:hover { color: var(--primary-light); }
+.container { max-width: 1220px; margin: 0 auto; }
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 28px;
+    padding: 18px 26px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-lg);
+    backdrop-filter: blur(16px);
+    box-shadow: var(--shadow);
+}
+header h1 {
+    font-size: 26px;
+    margin: 0;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    background: linear-gradient(135deg, var(--primary-light), var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
 .header-actions { display: flex; align-items: center; gap: 12px; }
-.logout-link { padding: 8px 12px; border-radius: 12px; border: 1px solid var(--border); color: var(--text); background: var(--surface-hover); font-weight: 600; }
-.logout-link:hover { background: rgba(93, 124, 255, 0.20); }
-.card-grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-bottom: 24px; }
-.card { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 22px; padding: 22px 20px 26px; box-shadow: var(--shadow); transition: transform 0.2s ease, box-shadow 0.2s ease; }
-.card:hover { transform: translateY(-2px); box-shadow: 0 30px 70px rgba(12, 20, 46, 0.5); }
-.card h3 { margin: 0 0 14px; font-size: 19px; color: var(--accent); }
-.card p { margin: 6px 0; color: var(--text); }
-.muted { color: var(--muted); }
+.logout-link {
+    padding: 9px 16px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    background: var(--surface-hover);
+    font-weight: 600;
+    font-size: 14px;
+    transition: all var(--transition);
+}
+.logout-link:hover { background: rgba(248, 113, 113, 0.15); color: var(--danger); border-color: var(--danger); }
+.card-grid {
+    display: grid;
+    gap: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+    margin-bottom: 26px;
+}
+.card {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-lg);
+    padding: 22px 22px 26px;
+    backdrop-filter: blur(14px);
+    box-shadow: var(--shadow);
+    transition: transform var(--transition), box-shadow var(--transition), border-color var(--transition);
+    position: relative;
+    overflow: hidden;
+}
+.card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 3px;
+    background: linear-gradient(90deg, var(--primary), var(--accent), transparent);
+    opacity: 0;
+    transition: opacity var(--transition);
+}
+.card:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--primary);
+}
+.card:hover::before { opacity: 1; }
+.card h3 {
+    margin: 0 0 14px;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--primary-light);
+    letter-spacing: -0.2px;
+}
+.card p {
+    margin: 5px 0;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.7;
+}
+.card p .stat-value { color: var(--text); font-weight: 700; font-size: 15px; }
+.muted { color: var(--muted); font-size: 13px; }
 .danger-text { color: var(--danger); }
-.actions { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 10px; }
-.inline-form { display: inline-block; }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 16px; border-radius: 12px; border: none; cursor: pointer; font-weight: 600; text-decoration: none; transition: transform 0.2s ease, box-shadow 0.2s, background 0.2s; background: linear-gradient(135deg, var(--primary), var(--primary-light)); color: #f5f7ff; box-shadow: 0 16px 38px rgba(77, 124, 255, 0.35); }
-.btn:hover { transform: translateY(-2px); box-shadow: 0 20px 46px rgba(77, 124, 255, 0.4); }
-.btn.secondary { background: transparent; border: 1px solid var(--panel-border); color: var(--text); box-shadow: none; }
-.btn.secondary:hover { background: var(--surface-hover); }
-.btn.danger { background: linear-gradient(135deg, #f87171, #f43f5e); color: #fff; box-shadow: 0 16px 32px rgba(248, 113, 113, 0.35); }
-input[type="text"], input[type="number"] {
-    padding: 8px 10px;
-    border-radius: 10px;
+.actions { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px; }
+.inline-form { display: inline-flex; align-items: center; }
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 9px 17px;
+    border-radius: var(--radius-sm);
+    border: none;
+    cursor: pointer;
+    font-weight: 650;
+    font-size: 13.5px;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: all var(--transition);
+    background: linear-gradient(135deg, var(--primary), var(--primary-light));
+    color: #f0f4ff;
+    box-shadow: 0 4px 18px rgba(91, 140, 255, 0.35);
+    letter-spacing: 0.2px;
+}
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 28px rgba(91, 140, 255, 0.45);
+}
+.btn:active { transform: translateY(0); }
+.btn.secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    box-shadow: none;
+}
+.btn.secondary:hover {
+    background: var(--surface-hover);
+    color: var(--text);
+    border-color: var(--primary);
+}
+.btn.danger {
+    background: linear-gradient(135deg, var(--danger), var(--danger-light));
+    color: #fff;
+    box-shadow: 0 4px 18px rgba(255, 107, 107, 0.3);
+}
+.btn.danger:hover { box-shadow: 0 8px 28px rgba(255, 107, 107, 0.4); }
+input[type="text"], input[type="number"], input[type="password"] {
+    padding: 9px 12px;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--border);
     background: var(--input-bg);
     color: var(--text);
     margin-right: 6px;
     outline: none;
-    transition: border 0.2s ease, background 0.2s ease;
+    font-size: 14px;
+    transition: all var(--transition);
 }
-input[type="text"]:focus, input[type="number"]:focus {
-    border-color: var(--accent);
-    background: rgba(93, 124, 255, 0.15);
+input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(56, 207, 255, 0.15); }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    border-radius: var(--radius);
+    overflow: hidden;
 }
-table { width: 100%; border-collapse: collapse; font-size: 14px; border-radius: 18px; overflow: hidden; }
-table th, table td { border-bottom: 1px solid var(--border); padding: 10px 8px; text-align: left; color: var(--text); }
-table th { color: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: 0.03em; }
-table tr:hover { background: var(--surface-hover); }
-.notice { padding: 12px 16px; border-radius: 14px; margin-bottom: 20px; border: 1px solid transparent; font-size: 14px; }
-.notice.success { background: rgba(74, 222, 128, 0.12); color: var(--success); border-color: rgba(74, 222, 128, 0.35); }
-.notice.error { background: rgba(248, 113, 113, 0.12); color: var(--danger); border-color: rgba(248, 113, 113, 0.35); }
-.small { color: var(--muted); font-size: 12px; }
-section { margin-bottom: 28px; }
+thead { background: var(--surface-hover); }
+table th {
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 11px 10px;
+    border-bottom: 2px solid var(--border);
+}
+table td { padding: 10px; border-bottom: 1px solid var(--border); color: var(--text); }
+table tbody tr { transition: background var(--transition); }
+table tbody tr:hover { background: var(--surface-hover); }
+.notice {
+    padding: 13px 18px;
+    border-radius: var(--radius-sm);
+    margin-bottom: 22px;
+    border: 1px solid transparent;
+    font-size: 14px;
+    font-weight: 550;
+    backdrop-filter: blur(8px);
+}
+.notice.success { background: rgba(61, 214, 140, 0.1); color: var(--success); border-color: rgba(61, 214, 140, 0.3); }
+.notice.error { background: rgba(255, 107, 107, 0.1); color: var(--danger); border-color: rgba(255, 107, 107, 0.3); }
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+.badge-high { background: rgba(255, 107, 107, 0.18); color: var(--danger); }
+.badge-medium { background: rgba(240, 184, 73, 0.18); color: var(--warning); }
+.badge-low { background: rgba(56, 207, 255, 0.15); color: var(--accent); }
+.badge-none { background: var(--surface-hover); color: var(--muted); }
+.small { color: var(--muted); font-size: 12px; font-weight: 500; }
+section { margin-bottom: 30px; }
 .theme-toggle {
     position: relative;
-    width: 42px;
-    height: 42px;
+    width: 40px; height: 40px;
     border-radius: 50%;
     border: 1px solid var(--border);
     background: var(--panel);
@@ -183,34 +345,87 @@ section { margin-bottom: 28px; }
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    transition: background 0.2s ease, transform 0.2s ease;
+    transition: all var(--transition);
+    font-size: 18px;
 }
-.theme-toggle:hover { transform: translateY(-2px); background: var(--surface-hover); }
+.theme-toggle:hover { transform: translateY(-2px); background: var(--surface-hover); border-color: var(--accent); }
 .theme-toggle .sun { display: none; }
 [data-theme="light"] .theme-toggle .sun { display: inline; }
 [data-theme="light"] .theme-toggle .moon { display: none; }
 .theme-toggle .moon { display: inline; }
-.login-container { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
-.login-panel { width: clamp(320px, 90vw, 380px); background: var(--panel); border: 1px solid var(--panel-border); border-radius: 22px; padding: 26px 26px 30px; box-shadow: var(--shadow); }
-.login-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-.login-header h1 { margin: 0; font-size: 22px; }
-.login-panel form { margin-top: 20px; display: flex; flex-direction: column; gap: 12px; }
-.login-panel label { font-weight: 600; color: var(--text); }
+.login-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+}
+.login-panel {
+    width: clamp(340px, 90vw, 400px);
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-lg);
+    padding: 30px 28px 34px;
+    backdrop-filter: blur(20px);
+    box-shadow: var(--shadow-lg);
+}
+.login-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+.login-header h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--primary-light), var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.login-panel form { margin-top: 22px; display: flex; flex-direction: column; gap: 14px; }
+.login-panel label { font-weight: 650; color: var(--text-secondary); font-size: 14px; }
 .login-panel input[type="password"] { width: 100%; }
-.login-panel button { margin-top: 8px; width: 100%; }
+.login-panel button { margin-top: 6px; width: 100%; }
 .login-footnote { margin-top: 18px; font-size: 13px; color: var(--muted); line-height: 1.7; }
-.dual-column { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
-.section-with-table { overflow: hidden; border-radius: 20px; border: 1px solid var(--panel-border); background: var(--panel); box-shadow: var(--shadow); padding: 20px 22px 24px; }
-.section-with-table h3 { margin-top: 0; margin-bottom: 14px; color: var(--accent); font-size: 18px; }
-.analysis-table td:nth-child(3) { font-weight: 600; }
+.dual-column { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 18px; }
+.section-with-table {
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--panel-border);
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+    box-shadow: var(--shadow);
+    padding: 22px 24px 26px;
+}
+.section-with-table h3 {
+    margin-top: 0;
+    margin-bottom: 14px;
+    color: var(--primary-light);
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+}
+.section-with-table h3 .count {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
+    margin-left: 8px;
+}
+.analysis-table td:nth-child(3) { font-weight: 650; }
 .analysis-table td:nth-child(7) { color: var(--muted); font-size: 12px; }
 .analysis-table td:nth-child(8) { color: var(--muted); }
-button:disabled, .btn:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; }
+button:disabled, .btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none !important; transform: none !important; }
+.status-indicator {
+    display: inline-block;
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+.status-on { background: var(--success); box-shadow: 0 0 8px var(--success); }
+.status-off { background: var(--muted); }
 @media (max-width: 720px) {
-    body { padding: 20px; }
-    header { flex-direction: column; align-items: flex-start; gap: 12px; }
+    body { padding: 18px; }
+    header { flex-direction: column; align-items: flex-start; gap: 14px; padding: 16px 20px; }
     .header-actions { width: 100%; justify-content: space-between; }
     .card { padding: 18px; }
+    .card-grid { grid-template-columns: 1fr; }
 }
 """
 
@@ -690,9 +905,12 @@ class PromptGuardianWebUI:
 
         if method == "POST" and parsed.path == "/":
             origin = headers.get("origin") or headers.get("referer") or ""
-            allowed = f"http://{self.host}:{self.port}"
-            if origin and not origin.startswith(allowed):
-                return self._response(403, "Forbidden", "来源不被允许")
+            if origin:
+                # 以请求 Host 头为基准（用户实际访问地址），而非监听地址 self.host
+                request_host = (headers.get("host") or "").split(":")[0].strip()
+                allowed = {request_host, self.host, "127.0.0.1", "localhost"}
+                if not any(origin.startswith(f"http://{h}:{self.port}") for h in allowed):
+                    return self._response(403, "Forbidden", "来源不被允许")
             form = parse_qs(body.decode("utf-8", "ignore"))
             csrf = (form.get("csrf", [""])[0] or "").strip()
             session_id = cookies.get("API_SESSION", "")
@@ -844,10 +1062,10 @@ class PromptGuardianWebUI:
         plugin_version = getattr(self.plugin, "plugin_version", "unknown")
 
         defense_labels = {
-            "sentry": "哨兵模式",
-            "aegis": "神盾模式",
-            "scorch": "焦土模式",
-            "intercept": "拦截模式",
+            "sentry": "静默加固",
+            "aegis": "复核确认",
+            "scorch": "内容替换",
+            "intercept": "立即拒绝",
         }
         llm_labels = {
             "active": "活跃",
@@ -1310,6 +1528,19 @@ class AntiPromptInjector(Star):
             items = list(self.recent_incidents)[:capacity]
             self.recent_incidents = deque(items, maxlen=capacity)
 
+    def _is_plugin_admin(self, event: AstrMessageEvent) -> bool:
+        """检查发送者是否为 AstrBot 全局管理员。"""
+        try:
+            return event.is_admin()
+        except Exception:
+            return False
+
+    def _is_plugin_privileged(self, event: AstrMessageEvent) -> bool:
+        """检查发送者是否拥有插件特权（全局管理员 或 插件白名单用户）。"""
+        if self._is_plugin_admin(event):
+            return True
+        return event.get_sender_id() in self.config.get("whitelist", [])
+
     def _make_prompt_preview(self, prompt: str) -> str:
         text = (prompt or "").replace("\r", " ").replace("\n", " ")
         text = re.sub(r"\s{2,}", " ", text)
@@ -1558,7 +1789,7 @@ class AntiPromptInjector(Star):
                         analysis["severity"] = "medium"
                     else:
                         analysis["severity"] = "low"
-                    # 在拦截模式下，任何人设偏差均视为风险
+                    # 在立即拒绝下，任何人设偏差均视为风险
                     return True, analysis
             except Exception as exc:
                 logger.warning(f"人设检测失败：{exc}")
@@ -1571,7 +1802,7 @@ class AntiPromptInjector(Star):
         if defense_mode == "sentry":
             if analysis["severity"] == "high" or (analysis["severity"] == "medium" and analysis.get("regex_hit")):
                 analysis["trigger"] = "regex" if analysis.get("regex_hit") else "heuristic"
-                analysis["reason"] = analysis.get("reason") or "哨兵模式命中中/高风险规则"
+                analysis["reason"] = analysis.get("reason") or "静默加固命中中/高风险规则"
                 return True, analysis
             return False, analysis
 
@@ -1679,7 +1910,7 @@ class AntiPromptInjector(Star):
         try:
             if not self.config.get("enabled"):
                 return
-            if event.get_sender_id() in self.config.get("whitelist", []):
+            if self._is_plugin_privileged(event):
                 return
 
             blacklist: Dict[str, float] = self.config.get("blacklist", {})
@@ -1780,7 +2011,7 @@ class AntiPromptInjector(Star):
         try:
             if not self.config.get("enabled"):
                 return
-            if event.get_sender_id() in self.config.get("whitelist", []):
+            if self._is_plugin_privileged(event):
                 return
             if not bool(self.config.get("enable_signature_lock", True)):
                 return
@@ -1809,10 +2040,10 @@ class AntiPromptInjector(Star):
     async def cmd_switch_defense_mode(self, event: AstrMessageEvent):
         modes = ["sentry", "aegis", "scorch", "intercept"]
         labels = {
-            "sentry": "哨兵模式",
-            "aegis": "神盾模式",
-            "scorch": "焦土模式",
-            "intercept": "拦截模式",
+            "sentry": "静默加固",
+            "aegis": "复核确认",
+            "scorch": "内容替换",
+            "intercept": "立即拒绝",
         }
         current_mode = self.config.get("defense_mode", "sentry")
         new_mode = modes[(modes.index(current_mode) + 1) % len(modes)]
@@ -1826,15 +2057,15 @@ class AntiPromptInjector(Star):
         self.config["defense_mode"] = "sentry"
         self.config.save_config()
         self.observe_until = time.time() + minutes * 60
-        yield event.plain_result(f"👀 已切换到观察模式 {minutes} 分钟，超时将自动恢复为拦截模式。")
+        yield event.plain_result(f"👀 已切换到观察模式 {minutes} 分钟，超时将自动恢复为立即拒绝。")
 
-    @filter.command("LLM分析状态")
+    @filter.command("LLM分析状态", is_admin=True)
     async def cmd_check_llm_analysis_state(self, event: AstrMessageEvent):
         mode_map = {
-            "sentry": {"name": "哨兵模式 (极速)", "desc": "仅使用启发式巡航，命中高风险将自动加固系统指令。"},
-            "aegis": {"name": "神盾模式 (均衡)", "desc": "启发式 + LLM 复核，兼顾兼容性与精度。"},
-            "scorch": {"name": "焦土模式 (强硬)", "desc": "一旦判定风险即强制改写，提供最强防护。"},
-            "intercept": {"name": "拦截模式 (经典)", "desc": "命中风险直接终止事件，兼容性较高。"},
+            "sentry": {"name": "静默加固 (极速)", "desc": "检测到风险后只加固系统指令，不打断对话，适合怕误杀的日常场景。"},
+            "aegis": {"name": "复核确认 (均衡)", "desc": "检测到风险后由 LLM 二次确认再加固指令，兼顾安全与对话体验。"},
+            "scorch": {"name": "内容替换 (强硬)", "desc": "检测到风险后直接把用户请求替换为拦截提示，LLM 不会看到原始内容，适合严格屏蔽的公开场景。"},
+            "intercept": {"name": "立即拒绝 (经典)", "desc": "检测到风险后立即中止请求并通知用户，LLM 完全收不到该消息，适合合规审计场合。"},
         }
         defense_mode = self.config.get("defense_mode", "sentry")
         mode_info = mode_map.get(defense_mode, mode_map["sentry"])
@@ -1848,7 +2079,7 @@ class AntiPromptInjector(Star):
             "mode_class": current_mode,
             "private_chat_status": "已启用" if private_enabled else "已禁用",
             "private_chat_description": "私聊触发 LLM 复核" if private_enabled else "仅在群聊启用复核",
-            "mode_description": "控制在神盾/焦土/拦截模式下，LLM 辅助分析的触发策略。",
+            "mode_description": "控制在复核确认/内容替换/立即拒绝下，LLM 辅助分析的触发策略。",
         }
         try:
             image_url = await self.html_render(STATUS_PANEL_TEMPLATE, data)
@@ -1902,33 +2133,35 @@ class AntiPromptInjector(Star):
     async def cmd_help(self, event: AstrMessageEvent):
         help_text = (
             "🛡️ AntiPromptInjector 核心指令：\n"
-            "— 核心管理（管理权限）—\n"
+            "— 核心管理（仅全局管理员）—\n"
             "/切换防护模式\n"
             "/切换观察模式 [分钟]\n"
             "/LLM分析状态\n"
             "/反注入统计\n"
-            "— LLM 分析控制（管理权限）—\n"
+            "— LLM 分析控制（仅全局管理员）—\n"
             "/开启LLM注入分析\n"
             "/关闭LLM注入分析\n"
-            "— 审查配置（管理权限）—\n"
+            "— 审查配置（仅全局管理员）—\n"
             "/设置审查LLM <供应商> [模型]\n"
             "/开启防骚扰\n"
             "/关闭防骚扰\n"
-            "— 名单管理（管理权限）—\n"
+            "— 名单管理（仅全局管理员）—\n"
             "/拉黑 <ID> [时长(分钟，0=永久)]\n"
             "/解封 <ID>\n"
             "/查看黑名单\n"
             "/添加防注入白名单ID <ID>\n"
             "/移除防注入白名单ID <ID>\n"
+            "— 白名单查看（管理员或白名单用户）—\n"
             "/查看防注入白名单\n"
             "— 安全设置 —\n"
             "/设置WebUI密码 <新密码>\n"
             "— 其他 —\n"
+            "/查看管理员状态\n"
             "WebUI 默认监听 127.0.0.1:18888，需先设置密码后方可登录使用。"
         )
         yield event.plain_result(help_text)
 
-    @filter.command("反注入统计")
+    @filter.command("反注入统计", is_admin=True)
     async def cmd_stats(self, event: AstrMessageEvent):
         yield event.plain_result(self._build_stats_summary())
 
@@ -2000,8 +2233,8 @@ class AntiPromptInjector(Star):
     @filter.command("查看防注入白名单")
     async def cmd_view_wl(self, event: AstrMessageEvent):
         whitelist = self.config.get("whitelist", [])
-        if not event.is_admin() and event.get_sender_id() not in whitelist:
-            yield event.plain_result("⚠️ 权限不足。")
+        if not self._is_plugin_privileged(event):
+            yield event.plain_result("⚠️ 权限不足，仅管理员或白名单用户可查看。")
             return
         if not whitelist:
             yield event.plain_result("当前白名单为空。")
@@ -2010,12 +2243,14 @@ class AntiPromptInjector(Star):
 
     @filter.command("查看管理员状态")
     async def cmd_check_admin(self, event: AstrMessageEvent):
-        if event.is_admin():
-            yield event.plain_result("✅ 您是 AstrBot 全局管理员。")
-        elif event.get_sender_id() in self.config.get("whitelist", []):
-            yield event.plain_result("✅ 您是白名单用户，但不是全局管理员。")
+        is_admin = self._is_plugin_admin(event)
+        in_whitelist = event.get_sender_id() in self.config.get("whitelist", [])
+        if is_admin:
+            yield event.plain_result("✅ 您是 AstrBot 全局管理员，拥有插件全部管理权限。")
+        elif in_whitelist:
+            yield event.plain_result("✅ 您是插件白名单用户。非管理员，无法执行拉黑/解封等管理指令。")
         else:
-            yield event.plain_result("⚠️ 权限不足。")
+            yield event.plain_result("⚠️ 您没有插件管理权限。")
 
     @filter.command("开启LLM注入分析", is_admin=True)
     async def cmd_enable_llm_analysis(self, event: AstrMessageEvent):
