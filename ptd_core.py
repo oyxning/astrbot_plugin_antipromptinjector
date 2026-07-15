@@ -267,7 +267,7 @@ class PromptThreatDetector(PTDCoreBase):
             {
                 "name": "Unicode标签混淆",
                 "pattern": re.compile(
-                    r"(?:[\u{E0000}-\u{E007F}\u{FFF0}-\u{FFFF}\u{200B}-\u{200F}\u{2028}\u{2029}]){3,}",
+                    r"(?:[\U000E0000-\U000E007F\uFFF0-\uFFFF\u200B-\u200F\u2028\u2029]){3,}",
                     re.IGNORECASE,
                 ),
                 "weight": 5,
@@ -1494,7 +1494,7 @@ class PromptThreatDetector(PTDCoreBase):
     def _detect_zero_width_payload(self, text: str) -> Optional[Dict[str, Any]]:
         """检测 Unicode 零宽字符和标签字符混淆"""
         zero_width_chars = re.compile(r'[\u200B\u200C\u200D\u200E\u200F\u2028\u2029\uFEFF\u00AD]')
-        tag_chars = re.compile(r'[\u{E0000}-\u{E007F}]')
+        tag_chars = re.compile(r"[\U000E0000-\U000E007F]")
         zw_matches = zero_width_chars.findall(text)
         tag_matches = tag_chars.findall(text)
         count = len(zw_matches) + len(tag_matches)
@@ -1532,7 +1532,7 @@ class PromptThreatDetector(PTDCoreBase):
             return score + 7, signals
         # 模式2: ASCII smuggling - Unicode标签字符用于解码注入
         # 检测文本中嵌入的大量Unicode标签序列(可能是ASCII smuggling的载荷)
-        tag_seq = re.compile(r'[\u{E0000}-\u{E007F}]{8,}')
+        tag_seq = re.compile(r"[\U000E0000-\U000E007F]{8,}")
         if tag_seq.search(text) and re.search(r'(system|prompt|jailbreak|override|ignore)', normalized, re.IGNORECASE):
             signals.append({
                 "type": "exfiltration",
