@@ -1,4 +1,4 @@
-# Anti-Prompt Injector · v3.6
+﻿# Anti-Prompt Injector · v3.6
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/oyxning/oyxning/refs/heads/main/AntiPromptInjectorlogo.png" alt="AntiPromptInjector Banner" width="100%" style="border-radius: 8px;" />
@@ -197,6 +197,6 @@ git clone https://github.com/oyxning/astrbot_plugin_antipromptinjector
 
 ## 社区 & 反馈
 
-[官方文档](https://docs.astrbot.app/) · [GitHub Issues](https://github.com/oyxning/astrbot_plugin_antipromptinjector) · [QQ 群：AstrBot Plugin 猫娘乐园](https://qm.qq.com/q/dBWQXCpwnm)
+[官方文档](https://docs.astrbot.app/) · [GitHub Issues](https://github.com/oyxning/astrbot_plugin_antipromptinjector) · 紧急联系：[shy0074@tongujiyu.cn](mailto:shy0074@tongujiyu.cn)
 
 如果这个插件帮你挡住过提示词注入，欢迎点个 ⭐ 支持一下。
