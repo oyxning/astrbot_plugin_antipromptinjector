@@ -905,7 +905,9 @@ class PromptGuardianWebUI:
 
         if method == "POST" and parsed.path == "/":
             origin = headers.get("origin") or headers.get("referer") or ""
-            if origin:
+            if origin and origin.strip().lower() != "null":
+                # 浏览器在 Referrer-Policy: no-referrer 的同源表单 POST 下会发送 Origin: null，
+                # 这类请求继续交给下方 CSRF Token 校验兜底，不应被当作非法来源直接拒绝。
                 # 以请求 Host 头为基准（用户实际访问地址），而非监听地址 self.host
                 request_host = (headers.get("host") or "").split(":")[0].strip()
                 allowed = {request_host, self.host, "127.0.0.1", "localhost"}
