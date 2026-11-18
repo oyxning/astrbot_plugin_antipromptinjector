@@ -16,6 +16,7 @@ from astrbot.api.all import MessageType
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.provider import ProviderRequest
 from astrbot.api.star import Context, Star, register
+from .access import admin_command
 
 try:
     from .persona_core import PersonaMatcher  # type: ignore
@@ -2036,7 +2037,7 @@ class AntiPromptInjector(Star):
         except Exception as exc:
             logger.error(f"读取链路校验失败: {exc}")
 
-    @filter.command("切换防护模式", is_admin=True)
+    @admin_command("切换防护模式")
     async def cmd_switch_defense_mode(self, event: AstrMessageEvent):
         modes = ["sentry", "aegis", "scorch", "intercept"]
         labels = {
@@ -2051,7 +2052,7 @@ class AntiPromptInjector(Star):
         self.config.save_config()
         yield event.plain_result(f"🛡️ 防护模式已切换为：{labels[new_mode]}")
 
-    @filter.command("切换观察模式", is_admin=True)
+    @admin_command("切换观察模式")
     async def cmd_temp_observe(self, event: AstrMessageEvent, minutes: int = 5):
         minutes = max(1, min(1440, int(minutes or 5)))
         self.config["defense_mode"] = "sentry"
@@ -2059,7 +2060,7 @@ class AntiPromptInjector(Star):
         self.observe_until = time.time() + minutes * 60
         yield event.plain_result(f"👀 已切换到观察模式 {minutes} 分钟，超时将自动恢复为立即拒绝。")
 
-    @filter.command("LLM分析状态", is_admin=True)
+    @admin_command("LLM分析状态")
     async def cmd_check_llm_analysis_state(self, event: AstrMessageEvent):
         mode_map = {
             "sentry": {"name": "静默加固 (极速)", "desc": "检测到风险后只加固系统指令，不打断对话，适合怕误杀的日常场景。"},
@@ -2088,7 +2089,7 @@ class AntiPromptInjector(Star):
             logger.error(f"渲染 LLM 状态面板失败：{exc}")
             yield event.plain_result("渲染状态面板时出现异常。")
 
-    @filter.command("设置审查LLM", is_admin=True)
+    @admin_command("设置审查LLM")
     async def cmd_set_review_llm(self, event: AstrMessageEvent, provider: str = "", model: str = ""):
         rp = (provider or "").strip()
         rm = (model or "").strip()
@@ -2099,19 +2100,19 @@ class AntiPromptInjector(Star):
         rm_disp = rm if rm else "默认"
         yield event.plain_result(f"✅ 审查供应商/模型已设置为：{rp_disp} / {rm_disp}")
 
-    @filter.command("开启防骚扰", is_admin=True)
+    @admin_command("开启防骚扰")
     async def cmd_enable_harassment(self, event: AstrMessageEvent):
         self.config["anti_harassment_enabled"] = True
         self.config.save_config()
         yield event.plain_result("✅ 已开启防性骚扰/辱骂/霸凌检测与拦截。")
 
-    @filter.command("关闭防骚扰", is_admin=True)
+    @admin_command("关闭防骚扰")
     async def cmd_disable_harassment(self, event: AstrMessageEvent):
         self.config["anti_harassment_enabled"] = False
         self.config.save_config()
         yield event.plain_result("✅ 已关闭防性骚扰/辱骂/霸凌检测。启发式仍保留日志，但不参与拦截评分。")
 
-    @filter.command("设置WebUI密码", is_admin=True)
+    @admin_command("设置WebUI密码")
     async def cmd_set_webui_password(self, event: AstrMessageEvent, new_password: str):
         if len(new_password) < 6:
             yield event.plain_result("⚠️ 密码长度至少需要 6 位。")
@@ -2151,7 +2152,7 @@ class AntiPromptInjector(Star):
             "/查看黑名单\n"
             "/添加防注入白名单ID <ID>\n"
             "/移除防注入白名单ID <ID>\n"
-            "— 白名单查看（管理员或白名单用户）—\n"
+            "— 白名单查看（仅全局管理员）—\n"
             "/查看防注入白名单\n"
             "— 安全设置 —\n"
             "/设置WebUI密码 <新密码>\n"
@@ -2161,11 +2162,11 @@ class AntiPromptInjector(Star):
         )
         yield event.plain_result(help_text)
 
-    @filter.command("反注入统计", is_admin=True)
+    @admin_command("反注入统计")
     async def cmd_stats(self, event: AstrMessageEvent):
         yield event.plain_result(self._build_stats_summary())
 
-    @filter.command("拉黑", is_admin=True)
+    @admin_command("拉黑")
     async def cmd_add_bl(self, event: AstrMessageEvent, target_id: str, duration_minutes: int = -1):
         blacklist = self.config.get("blacklist", {})
         if duration_minutes < 0:
@@ -2181,7 +2182,7 @@ class AntiPromptInjector(Star):
         self.config.save_config()
         yield event.plain_result(f"✅ {msg}")
 
-    @filter.command("解封", is_admin=True)
+    @admin_command("解封")
     async def cmd_remove_bl(self, event: AstrMessageEvent, target_id: str):
         blacklist = self.config.get("blacklist", {})
         if target_id in blacklist:
@@ -2192,7 +2193,7 @@ class AntiPromptInjector(Star):
         else:
             yield event.plain_result(f"⚠️ 用户 {target_id} 不在黑名单中。")
 
-    @filter.command("查看黑名单", is_admin=True)
+    @admin_command("查看黑名单")
     async def cmd_view_bl(self, event: AstrMessageEvent):
         blacklist = self.config.get("blacklist", {})
         if not blacklist:
@@ -2208,7 +2209,7 @@ class AntiPromptInjector(Star):
             lines.append(f"- {uid}（剩余：{remain}）")
         yield event.plain_result("\n".join(lines))
 
-    @filter.command("添加防注入白名单ID", is_admin=True)
+    @admin_command("添加防注入白名单ID")
     async def cmd_add_wl(self, event: AstrMessageEvent, target_id: str):
         whitelist = self.config.get("whitelist", [])
         if target_id in whitelist:
@@ -2219,7 +2220,7 @@ class AntiPromptInjector(Star):
         self.config.save_config()
         yield event.plain_result(f"✅ {target_id} 已加入白名单。")
 
-    @filter.command("移除防注入白名单ID", is_admin=True)
+    @admin_command("移除防注入白名单ID")
     async def cmd_remove_wl(self, event: AstrMessageEvent, target_id: str):
         whitelist = self.config.get("whitelist", [])
         if target_id not in whitelist:
@@ -2230,12 +2231,9 @@ class AntiPromptInjector(Star):
         self.config.save_config()
         yield event.plain_result(f"✅ {target_id} 已从白名单移除。")
 
-    @filter.command("查看防注入白名单")
+    @admin_command("查看防注入白名单")
     async def cmd_view_wl(self, event: AstrMessageEvent):
         whitelist = self.config.get("whitelist", [])
-        if not self._is_plugin_privileged(event):
-            yield event.plain_result("⚠️ 权限不足，仅管理员或白名单用户可查看。")
-            return
         if not whitelist:
             yield event.plain_result("当前白名单为空。")
         else:
@@ -2252,14 +2250,14 @@ class AntiPromptInjector(Star):
         else:
             yield event.plain_result("⚠️ 您没有插件管理权限。")
 
-    @filter.command("开启LLM注入分析", is_admin=True)
+    @admin_command("开启LLM注入分析")
     async def cmd_enable_llm_analysis(self, event: AstrMessageEvent):
         self.config["llm_analysis_mode"] = "active"
         self.config.save_config()
         self.last_llm_analysis_time = time.time()
         yield event.plain_result("✅ LLM 注入分析已开启（活跃模式）。")
 
-    @filter.command("关闭LLM注入分析", is_admin=True)
+    @admin_command("关闭LLM注入分析")
     async def cmd_disable_llm_analysis(self, event: AstrMessageEvent):
         self.config["llm_analysis_mode"] = "disabled"
         self.config.save_config()
