@@ -1,4 +1,6 @@
 import re
+from collections.abc import Mapping
+from math import isfinite
 from typing import Any, Dict, List, Optional
 
 
@@ -26,16 +28,11 @@ class PersonaMatcher:
 
     - Computes a 0–100 compatibility score of a user request against persona constraints
     - Produces a structured conflict report with references and suggested compliant phrasing
-    - Action levels:
-        * none: no conflict
-        * suggest: minor deviation, provide alternatives
-        * revise: adjustable violation, ask for correction
-        * block: severe violation, fully block
+    - Advisory only: results do not feed technical risk, blocking, or punishment.
     """
 
     def __init__(self, sensitivity: float = 0.7) -> None:
-        # sensitivity ∈ [0,1]; higher means stricter penalties
-        self.sensitivity = max(0.1, min(1.0, sensitivity))
+        self.sensitivity = self._sensitivity(sensitivity)
         self._profiles: Dict[str, PersonaProfile] = {}
         self._register_default_profiles()
 
@@ -55,7 +52,7 @@ class PersonaMatcher:
             },
             {
                 "name": "粗俗调侃",
-                "pattern": r"(土味情话|骚话|下流|下限|低幼|幼稚|粗俗)",
+                "pattern": r"(土味情话|骚话|下流|低幼|幼稚|粗俗)",
                 "severity": 2,
                 "rule": "用语需克制优雅，避免粗俗或低幼表达",
                 "suggestion": "改用礼貌且含蓄的措辞，保持角色气质。",
@@ -89,40 +86,54 @@ class PersonaMatcher:
     def list_profiles(self) -> List[str]:
         return list(self._profiles.keys())
 
-    def get_profile(self, persona_name: Optional[str]) -> PersonaProfile:
-        if persona_name and persona_name in self._profiles:
-            return self._profiles[persona_name]
-        # 默认人设：丰川祥子大小姐
-        return self._profiles["丰川祥子大小姐"]
+    def get_profile(self, persona_name: Optional[str]) -> Optional[PersonaProfile]:
+        return self._profiles.get(persona_name) if persona_name else None
 
     def analyze(
         self,
         prompt: str,
         system_prompt: str = "",
         persona_name: Optional[str] = None,
+        *,
+        config: Mapping | None = None,
     ) -> Dict[str, Any]:
-        persona = self._infer_persona(system_prompt, persona_name)
-        profile = self.get_profile(persona)
+        # A name mentioned in free-form system text does not select a policy.
+        config = config or {}
+        enabled = config.get("persona_enabled", True) is not False
+        profile = self.get_profile(persona_name) if enabled else None
+        if profile is None:
+            return {
+                "status": "not_applicable" if enabled else "disabled",
+                "persona_name": None,
+                "compatibility_score": None,
+                "action_level": "none",
+                "reason": "未选择适用的人设规则" if enabled else "已关闭人设建议",
+                "conflicts": [],
+                "references": [],
+                "suggestions": [],
+            }
 
         score = 100
         conflicts: List[Dict[str, Any]] = []
+        sensitivity = self._sensitivity(config.get("persona_sensitivity", self.sensitivity))
 
-        text = (prompt or "").lower()
+        text = (prompt or "")[:16_384].lower()
         # 基于禁则库的正则匹配
         for item in profile.forbidden_patterns:
             pattern = item.get("pattern", "")
             try:
-                if pattern and re.search(pattern, text, re.I):
+                match = re.search(pattern, text, re.I) if pattern else None
+                if match:
                     severity = int(item.get("severity", 1))
                     penalty = self._penalty_by_severity(severity)
-                    penalty = int(penalty * self.sensitivity)
+                    penalty = int(penalty * sensitivity)
                     score = max(0, score - penalty)
                     conflicts.append(
                         {
                             "name": item.get("name", "违规行为"),
                             "rule": item.get("rule", "行为违反人设准则"),
                             "severity": severity,
-                            "snippet": self._extract_snippet(text, pattern),
+                            "snippet": match[0],
                             "suggestion": item.get("suggestion", "请改为符合人设的表达。"),
                         }
                     )
@@ -130,30 +141,24 @@ class PersonaMatcher:
                 # 忽略无效正则
                 continue
 
-        # 根据分数与最高严重级别决定动作等级
-        max_severity = max([c.get("severity", 1) for c in conflicts], default=0)
-        action_level, reason = self._decide_action(score, max_severity)
-
         return {
+            "status": "advisory",
             "persona_name": profile.name,
             "compatibility_score": int(score),
-            "action_level": action_level,
-            "reason": reason,
+            "action_level": "suggest" if conflicts else "none",
+            "reason": "人设建议，不影响安全判断" if conflicts else "未命中人设建议",
             "conflicts": conflicts,
-            "references": profile.references,
+            "references": list(profile.references),
             "suggestions": [c.get("suggestion") for c in conflicts if c.get("suggestion")],
         }
 
-    def _infer_persona(self, system_prompt: str, persona_name: Optional[str]) -> Optional[str]:
-        if persona_name:
-            return persona_name
-        text = (system_prompt or "")
-        # 简单的系统 prompt 人设识别：
-        for key in self._profiles.keys():
-            if key in text:
-                return key
-        # 未指定则返回默认
-        return None
+    @staticmethod
+    def _sensitivity(value: float) -> float:
+        try:
+            value = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return 0.7
+        return max(0.1, min(1.0, value)) if isfinite(value) else 0.7
 
     @staticmethod
     def _penalty_by_severity(sev: int) -> int:
@@ -163,26 +168,3 @@ class PersonaMatcher:
         if sev == 2:
             return 25
         return 10
-
-    @staticmethod
-    def _extract_snippet(text: str, pattern: str) -> str:
-        try:
-            match = re.search(pattern, text, re.I)
-            if not match:
-                return ""
-            start = max(0, match.start() - 12)
-            end = min(len(text), match.end() + 12)
-            snippet = text[start:end]
-            return snippet
-        except Exception:
-            return ""
-
-    def _decide_action(self, score: int, max_severity: int) -> (str, str):
-        # 根据分数和最高严重级别给出动作等级及原因说明
-        if max_severity >= 3 or score < 50:
-            return "block", "人设冲突严重，已触发完全阻止"
-        if score < 80:
-            return "revise", "人设存在可调整的违规，建议修正后再请求"
-        if score < 95:
-            return "suggest", "人设轻微偏差，提供替代方案建议"
-        return "none", "人设一致性良好"

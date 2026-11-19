@@ -1,158 +1,49 @@
 {
-    "enabled": {
-        "description": "是否启用反注入攻击插件功能。",
-        "type": "bool",
-        "default": true
-    },
+    "enabled": {"description": "启用防护", "type": "bool", "default": true},
     "defense_mode": {
-        "description": "核心防御模式选择 (可通过指令切换)",
-        "type": "string",
-        "enum": [
-            {"value": "sentry", "label": "静默加固 (极速)"},
-            {"value": "aegis", "label": "复核确认 (均衡)"},
-            {"value": "scorch", "label": "内容替换 (强硬)"},
-            {"value": "intercept", "label": "立即拒绝 (经典)"}
-        ],
-        "default": "sentry",
-        "ui:widget": "select",
-        "hint": "选择插件的核心防御策略。\n- 静默加固(sentry): 检测到风险后只加固系统指令，不打断对话。适合怕误杀、追求对话连贯的场景。\n- 复核确认(aegis): 检测到风险后先用 LLM 二次确认，确认后再加固系统指令。适合想兼顾安全与体验的场景。\n- 内容替换(scorch): 检测到风险后直接把用户请求替换为拦截提示，LLM 不会看到原始内容。适合需要严格屏蔽风险的公开场景。\n- 立即拒绝(intercept): 检测到风险后立即中止请求并告知用户，LLM 完全收不到该消息。适合合规审计、必须拒绝的场合。\n\n快捷指令：管理员可发送 `/切换防护模式` 循环切换。",
-        "obvious_hint": true
+        "description": "防护模式", "type": "string", "default": "sentry",
+        "options": ["sentry", "aegis", "scorch", "intercept"],
+        "hint": "sentry：加固后继续；aegis：复核后决定是否加固；scorch：替换风险请求，无法隔离则阻断；intercept：停止本轮。"
     },
+    "protect_group_chat": {"description": "检测群聊", "type": "bool", "default": true},
+    "protect_private_chat": {"description": "检测私聊", "type": "bool", "default": true},
+    "scan_extra_text": {"description": "检测本轮额外文本", "type": "bool", "default": true},
+    "detect_encoded": {"description": "检查编码文本", "type": "bool", "default": true},
+    "anti_harassment_enabled": {"description": "记录不当表达线索", "type": "bool", "default": true},
+    "persona_enabled": {
+        "description": "启用人设专项检测", "type": "bool", "default": true,
+        "hint": "只在明确匹配人设策略时生效，不使用默认人设。"
+    },
+    "persona_sensitivity": {"description": "人设检测敏感度（0.1–1.0）", "type": "float", "default": 0.7},
     "auto_blacklist": {
-        "description": "自动拉黑注入者",
-        "type": "bool",
-        "default": true,
-        "hint": "启用后，当用户被判定为进行注入攻击时，其 ID 将被自动添加至黑名单。"
+        "description": "自动封禁", "type": "bool", "default": false,
+        "hint": "仅当替换或阻断路径确认技术注入并实际执行处置时才可生效。"
     },
     "blacklist_duration": {
-        "description": "自动拉黑时长（分钟）",
-        "type": "int",
-        "default": 60,
-        "hint": "自动拉黑的封禁时长（单位：分钟）。设置为 0 代表永久封禁。"
-    },
-    "blacklist": {
-        "description": "黑名单列表（自动或手动添加）",
-        "type": "object",
-        "default": {},
-        "items": {},
-        "hint": "记录被封禁用户及其解封时间戳，可通过指令或 WebUI 管理。"
-    },
-    "initial_whitelist": {
-        "description": "插件的初始白名单用户 ID 列表",
-        "type": "list",
-        "items": {
-            "type": "string",
-            "description": "用户 ID"
-        },
-        "default": []
+        "description": "自动封禁时长（分钟）", "type": "int", "default": 60,
+        "hint": "0 为永久。"
     },
     "llm_analysis_mode": {
-        "description": "LLM 辅助分析模式 (用于复核确认/内容替换/立即拒绝)",
-        "type": "string",
-        "enum": [
-            {"value": "active", "label": "活跃"},
-            {"value": "standby", "label": "待机"},
-            {"value": "disabled", "label": "禁用"}
-        ],
-        "default": "standby",
-        "ui:widget": "select",
-        "hint": "控制 LLM 辅助分析的触发策略。\n- 活跃(active): 每条消息都进行复核。\n- 待机(standby): 命中风险或出现 @ 时才复核。\n- 禁用(disabled): 完全关闭 LLM 复核。",
-        "obvious_hint": true
+        "description": "模型复核触发方式", "type": "string", "default": "standby",
+        "options": ["active", "standby", "disabled"],
+        "hint": "active：主动复核；standby：按风险触发；disabled：关闭。sentry 不发起复核。"
     },
     "review_provider": {
-        "description": "LLM 复核使用的供应商名（留空使用默认）",
-        "type": "string",
-        "default": "",
-        "hint": "例如：openai、azure、gemini 等（视 AstrBot 已配置的 Provider 名称而定）。"
+        "description": "复核提供商", "type": "string", "default": "", "_special": "select_provider",
+        "hint": "留空时按真实会话来源选择。"
     },
-    "review_model": {
-        "description": "LLM 复核使用的模型名（留空使用默认）",
-        "type": "string",
-        "default": "",
-        "hint": "例如：gpt-4o、gpt-4o-mini、claude-3.5 等（取决于所选供应商）。"
+    "review_model": {"description": "复核模型", "type": "string", "default": "", "hint": "留空使用所选 Provider 的模型。"},
+    "llm_analysis_private_chat_enabled": {"description": "允许私聊模型复核", "type": "bool", "default": false},
+    "review_failure_policy": {
+        "description": "模型复核失败策略", "type": "string", "default": "graded",
+        "options": ["graded", "strict"],
+        "hint": "graded：出现可疑证据时阻断；strict：只要需要复核，失败就阻断。"
     },
-    "llm_analysis_private_chat_enabled": {
-        "description": "私聊中也启用 LLM 辅助分析",
-        "type": "bool",
-        "default": false,
-        "hint": "设为 true 可让私聊消息同样触发 LLM 注入分析。"
-    },
-    "anti_harassment_enabled": {
-        "description": "启用防性骚扰/辱骂/霸凌检测与拦截",
-        "type": "bool",
-        "default": true,
-        "hint": "开启后，将识别骚扰、挑逗、辱骂、威胁等不当请求并提升风险等级。可在 WebUI 或指令中开关。"
-    },
-    "sanitize_enabled": {
-        "description": "启用提示词净化，移除伪造系统/工具调用/编码载荷片段",
-        "type": "bool",
-        "default": true,
-        "hint": "在非高风险场景也会清理明显的覆盖/越权结构，降低被篡改风险。"
-    },
-    "incident_history_size": {
-        "description": "WebUI 拦截记录数量上限",
-        "type": "int",
-        "default": 100,
-        "hint": "控制 WebUI 中展示的历史拦截事件数量，建议 50-200。"
-    },
-    "webui_enabled": {
-        "description": "是否启用 WebUI 控制台",
-        "type": "bool",
-        "default": true,
-        "hint": "开启后，在配置的地址上提供可视化配置与监控面板。"
-    },
-    "webui_host": {
-        "description": "WebUI 监听地址",
-        "type": "string",
-        "default": "127.0.0.1",
-        "hint": "默认仅允许本地访问，如需对局域网开放请修改为 0.0.0.0。"
-    },
-    "webui_port": {
-        "description": "WebUI 监听端口",
-        "type": "int",
-        "default": 18888,
-        "hint": "与其他服务端口冲突时可在此处调整。"
-    },
-    "webui_password_hash": {
-        "description": "WebUI 密码哈希（自动维护）",
-        "type": "string",
-        "default": "",
-        "hint": "请通过指令 /设置WebUI密码 <新密码> 设置。此字段由插件自动生成，无需手动修改。"
-    },
-    "webui_password_salt": {
-        "description": "WebUI 密码盐值（自动维护）",
-        "type": "string",
-        "default": "",
-        "hint": "由插件自动生成，与 webui_password_hash 配套使用。"
-    },
-    "webui_password_alg": {
-        "description": "WebUI 密码哈希算法（自动维护）",
-        "type": "string",
-        "default": "",
-        "hint": "当前使用 pbkdf2_sha256。由插件自动维护。"
-    },
-    "webui_password_iters": {
-        "description": "WebUI 密码哈希迭代次数（自动维护）",
-        "type": "int",
-        "default": 0,
-        "hint": "由插件自动维护，提升密码哈希强度。"
-    },
-    "webui_token": {
-        "description": "WebUI 访问令牌",
-        "type": "string",
-        "default": "",
-        "hint": "设置非空字符串后，访问 WebUI 需携带 ?token=令牌，确保面板安全。"
-    },
-    "webui_session_timeout": {
-        "description": "WebUI 会话保持时长（秒）",
-        "type": "int",
-        "default": 3600,
-        "hint": "登录成功后的会话有效期，默认 3600 秒。"
-    },
-    "enable_signature_lock": {
-        "description": "启用请求签名锁，阻止读取过程中被篡改",
-        "type": "bool",
-        "default": true,
-        "hint": "在发送前校验请求签名，如被其他插件修改且包含可疑结构则强制拦截。"
-    }
+    "review_timeout_seconds": {"description": "复核超时（秒，1–60）", "type": "int", "default": 10},
+    "review_max_concurrency": {"description": "复核并发上限（1–16）", "type": "int", "default": 2},
+    "review_max_chars": {"description": "复核输入上限（字符，256–8192）", "type": "int", "default": 4096},
+    "gentle_refusal": {"description": "委婉拒绝", "type": "bool", "default": false, "hint": "因注入风险实际阻断时，用当前人格生成一句拒绝；可能产生模型费用。"},
+    "refusal_provider": {"description": "拒绝回复提供商", "type": "string", "default": "", "_special": "select_provider", "hint": "留空跟随当前会话。"},
+    "refusal_model": {"description": "拒绝回复模型", "type": "string", "default": "", "hint": "默认跟随会话模型；另选提供商后使用该提供商的默认模型。"},
+    "incident_history_size": {"description": "诊断记录保留条数（1–5000）", "type": "int", "default": 100}
 }
