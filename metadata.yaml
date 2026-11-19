@@ -1,5 +1,7 @@
 name: antipromptinjector
-version: v3.5.1
+version: v4.1.0
 author: LumineStory
-desc: 屏蔽伪系统注入攻击，支持高级提示词审计、自动封禁与 WebUI 管理
+desc: 检查本轮文本，按模式加固、复核或阻断；在 AstrBot 插件页面管理设置与诊断。
+display_name: AntiPromptInjector
+astrbot_version: ">=4.29.4"
 repo: https://github.com/oyxning/astrbot_plugin_antipromptinjector

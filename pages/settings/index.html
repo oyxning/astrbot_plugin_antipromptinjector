@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>反注入设置中心</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="/api/plugin/page/bridge-sdk.js"></script>
+  <script defer src="./app.js"></script>
+</head>
+<body>
+<header class="header">
+  <div><p class="eyebrow">AntiPromptInjector</p><h1>反注入设置中心</h1></div>
+  <button id="refresh" type="button">刷新</button>
+</header>
+<p id="connection" role="status" class="notice" hidden></p>
+<main id="workspace" class="workspace" hidden>
+  <aside class="rail">
+    <label for="settings-search">搜索设置</label>
+    <input id="settings-search" type="search" placeholder="例如：封禁、超时" autocomplete="off">
+    <div id="search-results" hidden></div>
+    <nav aria-label="设置分类" id="navigation">
+      <button type="button" data-tab="overview" aria-current="page">概览</button>
+      <button type="button" data-tab="defense">防护设置</button>
+      <button type="button" data-tab="review">模型复核</button>
+      <button type="button" data-tab="entries">名单管理</button>
+      <button type="button" data-tab="records">记录与试算</button>
+    </nav>
+  </aside>
+  <div class="content">
+    <section data-panel="overview" aria-labelledby="overview-title">
+      <h2 id="overview-title">当前防护</h2>
+      <dl id="effective" class="facts"></dl>
+      <h3>近期处置</h3>
+      <p class="muted">按当前保留的诊断记录统计</p>
+      <dl id="statistics" class="metrics"></dl>
+    </section>
+    <section data-panel="defense" aria-labelledby="defense-title" hidden>
+      <h2 id="defense-title">防护设置</h2>
+      <div id="defense-fields" class="fields"></div>
+      <details><summary>高级防护设置</summary><div id="defense-advanced" class="fields"></div></details>
+      <form id="observation-form" class="operation">
+        <h3>临时观察</h3>
+        <p id="observation-status"></p>
+        <p class="muted">观察期间只记录检测动作。已有手动限制与宿主权限仍然生效。</p>
+        <div class="controls">
+          <label>时长（分钟）<input name="minutes" type="number" min="1" max="1440" value="30" required></label>
+          <button type="submit">开启观察</button><button type="button" id="observation-stop">结束观察</button>
+        </div>
+        <p id="observation-message" role="status" hidden></p>
+      </form>
+    </section>
+    <section data-panel="review" aria-labelledby="review-title" hidden>
+      <h2 id="review-title">模型复核</h2>
+      <div id="review-fields" class="fields"></div>
+      <details><summary>高级复核设置</summary><div id="review-advanced" class="fields"></div></details>
+    </section>
+    <section data-panel="entries" aria-labelledby="entries-title" hidden>
+      <h2 id="entries-title">名单管理</h2>
+      <div class="controls">
+        <label>名单<select id="entry-filter"><option value="">全部</option><option value="blacklist">黑名单</option><option value="whitelist">白名单</option></select></label>
+        <label>搜索<input id="entry-search" type="search" placeholder="平台、用户或会话"></label>
+      </div>
+      <p id="entry-message" role="status" hidden></p>
+      <div id="entry-list" class="scroll"></div>
+      <details id="pending-entries">
+        <summary>迁移待认领 <span id="pending-count"></span></summary>
+        <p class="muted">未认领的旧白名单不提供豁免；未到期旧黑名单仍按原用户 ID 限制。认领后按指定范围生效。</p>
+        <div id="pending-list" class="scroll"></div>
+        <form id="adopt-form" class="operation" hidden>
+          <h3>认领 <span id="adopt-user"></span></h3>
+          <div class="field-grid">
+            <label>平台<input name="platform" maxlength="1024" required></label>
+            <label>机器人实例 ID<input name="instance" maxlength="1024" required></label>
+            <label>会话来源（可选）<input name="session" maxlength="1024"></label>
+          </div>
+          <button type="submit">确认认领</button><button type="button" id="adopt-cancel">取消</button>
+        </form>
+      </details>
+      <form id="entry-form" class="operation">
+        <h3>添加条目</h3>
+        <div class="field-grid">
+          <label>名单<select name="kind"><option value="blacklist">黑名单</option><option value="whitelist">白名单</option></select></label>
+          <label>平台<input name="platform" maxlength="1024" required></label>
+          <label>机器人实例 ID<input name="instance" maxlength="1024" required></label>
+          <label>用户 ID<input name="user" maxlength="1024" required></label>
+          <label>会话来源（可选）<input name="session" maxlength="1024" placeholder="留空：该实例下所有会话"></label>
+          <label>有效期（分钟）<input name="duration_minutes" type="number" min="0" max="525600" value="0" required></label>
+          <label>原因（可选）<input name="reason" maxlength="240"></label>
+        </div>
+        <p class="muted">有效期填 0 表示永久。</p>
+        <button type="submit">添加条目</button>
+      </form>
+    </section>
+    <section data-panel="records" aria-labelledby="records-title" hidden>
+      <h2 id="records-title">记录与试算</h2>
+      <div class="controls">
+        <label>实际动作<select id="action-filter">
+          <option value="">全部</option><option value="allow">放行</option><option value="harden">加固</option>
+          <option value="replace">替换</option><option value="block">阻断</option>
+        </select></label>
+        <label>复核<select id="review-filter"><option value="">全部</option><option value="failed">复核失败</option></select></label>
+        <label>处置<select id="ban-filter"><option value="">全部</option><option value="banned">已封禁</option><option value="observed">临时观察</option></select></label>
+        <label>搜索<input id="record-search" type="search" placeholder="请求 ID、来源或证据"></label>
+        <label>开始日期<input id="date-start" type="date"></label>
+        <label>结束日期<input id="date-end" type="date"></label>
+      </div>
+      <div class="controls">
+        <button type="button" id="export" disabled>导出筛选结果（JSON）</button>
+        <button type="button" class="danger" id="clear" disabled>清除记录</button>
+      </div>
+      <p id="record-message" role="status" hidden></p>
+      <div id="record-list"></div>
+      <form id="sample-form" class="operation">
+        <h3>单条试算</h3>
+        <label>样例文本<textarea name="text" maxlength="8192" rows="5" required></textarea></label>
+        <p class="muted">使用当前生效设置，不写入记录、名单或处罚。</p>
+        <button type="submit">仅规则试算</button>
+        <details>
+          <summary>模型试算（可能计费）</summary>
+          <p class="muted">模型试算仅使用已配置并生效的 Provider ID，不使用真实会话。请勿输入密钥或个人数据。</p>
+          <p id="sample-provider"></p>
+          <button type="button" id="paid">调用模型试算</button>
+        </details>
+        <p id="sample-message" role="status" hidden></p>
+        <div id="sample-result" aria-live="polite"></div>
+      </form>
+    </section>
+    <footer class="save-bar">
+      <div>
+        <p id="save-state" role="status">正在载入设置…</p>
+        <button id="reload-config" type="button" hidden>载入最新设置</button>
+      </div>
+      <button type="button" class="primary" id="save" disabled>保存并应用</button>
+    </footer>
+  </div>
+</main>
+<dialog id="confirm-dialog" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+  <form method="dialog">
+    <h2 id="confirm-title">确认操作</h2>
+    <p id="confirm-message"></p>
+    <div class="confirm-actions">
+      <button value="cancel" autofocus>取消</button>
+      <button class="primary" value="accept">确认</button>
+    </div>
+  </form>
+</dialog>
+</body>
+</html>
